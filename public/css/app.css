@@ -2275,6 +2275,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .archive-answer .md { font-size: var(--fs-md); line-height: 1.55; overflow-wrap: anywhere; }
 .archive-sources { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .archive-sources button { width: 100%; text-align: left; }
+.answer-review-excerpt { max-height: 160px; }
 #oc-perm-list li { display: flex; align-items: center; gap: 8px; padding: 7px 8px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 #oc-perm-list code { flex: none; color: var(--accent-2); }
 #oc-perm-list button { flex: none; margin-left: auto; }

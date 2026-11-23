@@ -80,6 +80,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Laporan pola kerja | biaya/token/permintaan/sesi per project, model, dan jam (7/30/90 hari) | ✅ |
 | Bandingkan model | satu pertanyaan ke dua model Claude (tool mati, sesi tidak disimpan), jawaban + biaya + durasi | ✅ |
 | Tanya arsip | cari lintas transkrip, jawab hanya dari kutipan dengan nomor sumber yang bisa dibuka | ✅ |
+| Nilai jawaban terakhir | model kedua menilai kebenaran/risiko/verifikasi jawaban terakhir, tanpa tool | ✅ |
 
 ---
 

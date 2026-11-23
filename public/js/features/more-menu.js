@@ -19,6 +19,7 @@ import { openInsights } from './insights.js';
 import { openCompare } from './compare.js';
 import { openArchiveAsk } from './archive-ask.js';
 import { openAutomations } from './opencode-automations.js';
+import { openAnswerReview } from './answer-review.js';
 
 export function toggleMoreMenu(open = $('#more-menu').hidden) {
   $('#more-menu').hidden = !open;
@@ -112,6 +113,7 @@ export function initMoreMenu() {
       else if (item.dataset.more === 'compare') openCompare();
       else if (item.dataset.more === 'archive-ask') openArchiveAsk();
       else if (item.dataset.more === 'oc-automations') openAutomations();
+      else if (item.dataset.more === 'answer-review') openAnswerReview();
       else if (item.dataset.more === 'roster') openRoster();
       else if (item.dataset.more === 'export-session') await exportActiveSession();
       else if (item.dataset.more === 'terminal') {

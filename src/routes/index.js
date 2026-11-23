@@ -5,6 +5,7 @@ import * as account from './account.js';
 import * as addDirs from './add-dirs.js';
 import * as approvals from './approvals.js';
 import * as archive from './archive.js';
+import * as answerReview from './answer-review.js';
 import * as attention from './attention.js';
 import * as autologon from './autologon.js';
 import * as backup from './backup.js';
@@ -71,6 +72,7 @@ export function buildRouter() {
     insights.register,
     compare.register,
     archive.register,
+    answerReview.register,
     opencodeAutomations.register,
     cliBridge.register,
     templates.register,

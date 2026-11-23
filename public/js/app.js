@@ -80,6 +80,7 @@ import { initInsights } from './features/insights.js';
 import { initCompare } from './features/compare.js';
 import { initArchiveAsk } from './features/archive-ask.js';
 import { initAutomations } from './features/opencode-automations.js';
+import { initAnswerReview } from './features/answer-review.js';
 import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
@@ -139,6 +140,7 @@ initInsights(); // 📈 pola kerja
 initCompare(); // ⚖️ bandingkan dua model
 initArchiveAsk(); // 💬 tanya arsip
 initAutomations(); // ⏰ automation OpenCode
+initAnswerReview(); // 🧪 nilai jawaban terakhir
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();

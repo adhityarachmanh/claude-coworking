@@ -164,6 +164,7 @@
               <button role="menuitem" data-more="compare" title="Jalankan pertanyaan yang sama ke dua model Claude, lihat jawaban dan biayanya">⚖️ Bandingkan model…</button>
               <button role="menuitem" data-more="archive-ask" title="Tanya lintas transkrip sesi lama; jawaban hanya dari kutipan arsip">💬 Tanya arsip…</button>
               <button role="menuitem" data-more="oc-automations" title="Jadwal prompt/Code Mode OpenCode untuk project ini (OpenCode 2.4)">⏰ Automation OpenCode…</button>
+              <button role="menuitem" data-more="answer-review" title="Minta model kedua menilai jawaban terakhir: benar, risiko, dan tes yang kurang">🧪 Nilai jawaban terakhir…</button>
               <button role="menuitem" data-more="oc-saved-permissions" data-cap="permissions" title="Izin “Selalu izinkan” OpenCode yang tersimpan di laptop ini">🛡️ Izin tersimpan OpenCode…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
@@ -1568,6 +1569,21 @@
       </div>
     </div>
 
+    <div id="answer-review-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="answer-review-title">
+        <div class="modal-head"><b id="answer-review-title">Nilai jawaban terakhir</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Model kedua menilai jawaban terakhir tanpa tool dan tanpa menyimpan sesi. Satu penilaian memakai token.</p>
+        <pre id="answer-review-excerpt" class="cc-output answer-review-excerpt"></pre>
+        <div class="oc-form-grid">
+          <label class="oc-field"><span>Fokus (opsional)</span><input id="answer-review-focus" maxlength="500" placeholder="keamanan, performa, tes…" /></label>
+          <label class="oc-field"><span>Model penilai (opsional)</span><input id="answer-review-model" maxlength="80" placeholder="opus / sonnet (kosong = bawaan)" /></label>
+        </div>
+        <p id="answer-review-error" class="field-error" role="alert"></p>
+        <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="answer-review-run" class="primary">Nilai sekarang</button></div>
+        <div id="answer-review-body" class="archive-answer" aria-live="polite"></div>
+      </div>
+    </div>
+
     <div id="oc-automations-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="oc-auto-title">
         <div class="modal-head"><b id="oc-auto-title">Automation OpenCode</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
@@ -2080,6 +2096,7 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='compare']"><span aria-hidden="true">⚖️</span><span>Bandingkan model</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='archive-ask']"><span aria-hidden="true">💬</span><span>Tanya arsip</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='oc-automations']"><span aria-hidden="true">⏰</span><span>Automation OpenCode</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='answer-review']"><span aria-hidden="true">🧪</span><span>Nilai jawaban terakhir</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='oc-saved-permissions']" data-mutates data-cap="permissions"><span aria-hidden="true">🛡️</span><span>Izin tersimpan OpenCode</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>

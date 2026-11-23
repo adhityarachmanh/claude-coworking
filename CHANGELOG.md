@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🧪 Nilai jawaban terakhir.** ⋯ → **Nilai jawaban terakhir** meminta model kedua (Claude, tanpa tool, sesi tidak disimpan) menilai jawaban asisten terakhir: yang benar, kesalahan/risiko, verifikasi yang kurang, dan saran. Fokus dan model penilai bisa diisi; satu penilaian memakai token.
+
 ## 1.3.0
 
 - **⏰ Automation OpenCode.** ⋯ → **Automation OpenCode** mengelola jadwal OpenCode 2.4: prompt atau skrip Code Mode, dipicu tiap interval, cron, sekali waktu, atau event MCP. Daftar menampilkan status, jadwal berikutnya, hasil terakhir, dan tombol **Jeda/Lanjutkan/Hapus**. Automation dibuat di folder project aktif; hanya project OpenCode; perubahan hanya dari laptop, pembacaan juga lewat Tailscale.
