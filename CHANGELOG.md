@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.99
 
 - **⚙️ Auto-compact & event hook Claude.** ⚙️ Flag Claude kini punya **Auto-compact** (`--autocompact`, `auto` atau mis. `500k`, minimal 100k token) dan **Event hook di chat** (`--include-hook-events`). Hook yang gagal muncul sebagai baris peringatan berisi event, nama hook, dan baris pertama stderr; hook yang sukses tidak menambah kebisingan.
 - **🗣 Transkrip subagent.** **Transkrip subagent di kartu delegasi** (`--forward-subagent-text`) menyimpan kata-kata subagent di detail kartu delegasi, di atas laporan akhirnya — bukan lagi hanya tool call dan hasil akhir.
