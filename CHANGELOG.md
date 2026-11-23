@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.1.0
 
 - **⚠ Papan perlu tindakan lebih lengkap.** Selain izin/rencana, budget, antrian, giliran terputus, dan jadwal, daftar di atas 🗂 Semua project kini juga menandai **CI gagal**, **model yang tidak tersedia lagi** (mis. setelah logout provider), **pilihan mode izin lama**, dan **proses OpenCode yang berhenti**. Ketuk item model/mode untuk membuka pengaturan giliran.
 - **📈 Pola kerja.** ⋯ → **Pola kerja** merangkum ledger 7/30/90 hari: biaya, token, permintaan, sesi, project aktif, jam tersibuk, serta tabel project dan model dengan biaya terbesar. Hanya dari laptop/Tailscale.
