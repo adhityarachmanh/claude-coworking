@@ -1,0 +1,68 @@
+// Claude flags (src/hub.js cleanSettings): per-project spawn flags are validated so a hand-edited state.json can
+// never put junk into the Claude process arguments.
+import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { test } from 'node:test';
+import { Hub } from '../src/hub.js';
+
+test('cleanSettings: flag Claude valid disimpan, junk diabaikan', () => {
+  const hub = new Hub({ dataDir: mkdtempSync(path.join(tmpdir(), 'cf-data-')) });
+  const dir = mkdtempSync(path.join(tmpdir(), 'cf-proj-'));
+  const project = hub.upsertProject(dir, 'custom');
+
+  hub.updateSettings(project.id, {
+    claudeFallbackModel: 'sonnet,haiku',
+    claudeMaxTurns: 3,
+    claudeMaxBudgetUsd: 5,
+    claudeTools: 'Bash,Edit,Read',
+    claudeAllowedTools: ['Read', 'Bash(git log *)'],
+    claudeDisallowedTools: ['Edit', 'Bash(rm *)'],
+    claudeSettingSources: 'user,project',
+  });
+  const s = hub.settingsFor(project.id);
+  assert.equal(s.claudeFallbackModel, 'sonnet,haiku');
+  assert.equal(s.claudeMaxTurns, 3);
+  assert.equal(s.claudeMaxBudgetUsd, 5);
+  assert.equal(s.claudeTools, 'Bash,Edit,Read');
+  assert.deepEqual(s.claudeAllowedTools, ['Read', 'Bash(git log *)']);
+  assert.deepEqual(s.claudeDisallowedTools, ['Edit', 'Bash(rm *)']);
+  assert.equal(s.claudeSettingSources, 'user,project');
+
+  hub.updateSettings(project.id, {
+    claudeFallbackModel: 'bad model name!',
+    claudeMaxTurns: -1,
+    claudeMaxBudgetUsd: 'sepuluh',
+    claudeTools: ['Bash', 'Edit'], // wrong shape
+    claudeAllowedTools: ['a\nb'],
+    claudeDisallowedTools: 'Edit',
+    claudeSettingSources: 'user,cloud',
+  });
+  const cleaned = hub.settingsFor(project.id);
+  // Invalid patches are ignored: the stored values stay.
+  assert.equal(cleaned.claudeFallbackModel, 'sonnet,haiku');
+  assert.equal(cleaned.claudeMaxTurns, 3);
+  assert.equal(cleaned.claudeMaxBudgetUsd, 5);
+  assert.deepEqual(cleaned.claudeAllowedTools, ['Read', 'Bash(git log *)']);
+
+  hub.updateSettings(project.id, { claudeMaxTurns: null, claudeTools: '', claudeAllowedTools: [], claudeSettingSources: '' });
+  const cleared = hub.settingsFor(project.id);
+  assert.equal(cleared.claudeMaxTurns, null);
+  assert.equal(cleared.claudeTools, null);
+  assert.deepEqual(cleared.claudeAllowedTools, []);
+  assert.equal(cleared.claudeSettingSources, null);
+});
+
+test('cleanSettings: default kosong untuk project baru', () => {
+  const hub = new Hub({ dataDir: mkdtempSync(path.join(tmpdir(), 'cf-def-')) });
+  const project = hub.upsertProject(mkdtempSync(path.join(tmpdir(), 'cf-defp-')), 'custom');
+  const s = hub.settingsFor(project.id);
+  assert.equal(s.claudeFallbackModel, '');
+  assert.equal(s.claudeMaxTurns, null);
+  assert.equal(s.claudeMaxBudgetUsd, null);
+  assert.equal(s.claudeTools, null);
+  assert.deepEqual(s.claudeAllowedTools, []);
+  assert.deepEqual(s.claudeDisallowedTools, []);
+  assert.equal(s.claudeSettingSources, null);
+});

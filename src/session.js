@@ -49,7 +49,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
 
 // The team setting needs a fresh process, and so does a change of workspace (e.g. between a folder and its worktree).
-const restartKey = (s) => String(s.team) + '|' + (s.workspacePath ?? '') + '|' + (s.additionalDirectories ?? []).join('\n');
+const restartKey = (s) => String(s.team) + '|' + (s.workspacePath ?? '') + '|' + (s.additionalDirectories ?? []).join('\n') + '|' + String(s.claudeFallbackModel ?? '') + '|' + String(s.claudeMaxTurns ?? '') + '|' + String(s.claudeMaxBudgetUsd ?? '') + '|' + String(s.claudeTools ?? '') + '|' + (s.claudeAllowedTools ?? []).join('\n') + '|' + (s.claudeDisallowedTools ?? []).join('\n') + '|' + String(s.claudeSettingSources ?? '');
 
 const streamArgs = (claude) => [...claude.args, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
 
@@ -895,6 +895,14 @@ export class ClaudeSession {
     ];
     if (settings.model) args.push('--model', settings.model);
     if (settings.effort) args.push('--effort', settings.effort);
+    // 🎛️ Per-project Claude flags (print mode; Claude Code 2.1.328). Each is one argv element via the spawn array.
+    if (settings.claudeFallbackModel) args.push('--fallback-model', settings.claudeFallbackModel);
+    if (settings.claudeMaxTurns != null) args.push('--max-turns', String(settings.claudeMaxTurns));
+    if (settings.claudeMaxBudgetUsd != null) args.push('--max-budget-usd', String(settings.claudeMaxBudgetUsd));
+    if (settings.claudeTools) args.push('--tools', settings.claudeTools);
+    if (settings.claudeAllowedTools?.length) args.push('--allowedTools', ...settings.claudeAllowedTools);
+    if (settings.claudeDisallowedTools?.length) args.push('--disallowedTools', ...settings.claudeDisallowedTools);
+    if (settings.claudeSettingSources) args.push('--setting-sources', settings.claudeSettingSources);
     // 📂 Extra folders outside the project. One variadic flag: `--add-dir <directories...>` (Claude Code 2.1.328).
     if (settings.additionalDirectories?.length) args.push('--add-dir', ...settings.additionalDirectories);
     // 🤖 An unanswered permission request is DENIED instead of hanging the turn (Claude Code 2.1.319+). Plan already
