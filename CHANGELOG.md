@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.98
+
+- **Perbaikan rilis 1.0.97.** Mengosongkan saran prompt saat pesan dikirim tidak lagi mengirim pembaruan status (itu membuat sesi terlihat menganggur sebelum giliran dimulai, sehingga test izin berlanjut saat sesi masih sibuk). Bar “Saran berikutnya” sekarang disembunyikan di browser begitu pesan terkirim.
+
 ## 1.0.97
 
 - **🔧 Cek versi Claude Code tidak lagi gagal setelah update.** Setelah Claude Code memperbarui diri saat sesi berjalan, paket npm bisa kehilangan `bin/claude.exe` (hanya menyisakan `claude.exe.old` dan `cli-wrapper.cjs`), dan shim nvm-windows gagal menjalankannya karena path berisi spasi. Aplikasi kini menjalankan `cli-wrapper.cjs` bila binary native hilang, jadi cek versi/kontrak membaca versi yang benar-benar terpasang (di mesin ini `2.1.328`) alih-alih melaporkan “1 cek gagal: versi”. Setelah memperbarui, tekan **Cek ulang** di kartu kompatibilitas.
