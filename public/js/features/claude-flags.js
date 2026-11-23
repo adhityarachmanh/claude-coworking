@@ -28,6 +28,9 @@ function render() {
   set('#cf-autocompact', st.claudeAutocompact ?? '');
   $('#cf-hook-events').checked = st.claudeIncludeHookEvents === true;
   $('#cf-subagent-text').checked = st.claudeForwardSubagentText === true;
+  $('#cf-private').checked = st.claudeNoSessionPersistence === true;
+  $('#cf-safe').checked = st.claudeSafeMode === true;
+  $('#cf-debug').checked = st.claudeDebug === true;
   $('#claude-flags-error').textContent = '';
 }
 
@@ -60,6 +63,9 @@ async function save() {
     claudeAutocompact: $('#cf-autocompact').value.trim() || null,
     claudeIncludeHookEvents: $('#cf-hook-events').checked,
     claudeForwardSubagentText: $('#cf-subagent-text').checked,
+    claudeNoSessionPersistence: $('#cf-private').checked,
+    claudeSafeMode: $('#cf-safe').checked,
+    claudeDebug: $('#cf-debug').checked,
   };
   try {
     await api(`/api/projects/${state.active}/settings`, body);

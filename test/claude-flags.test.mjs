@@ -105,6 +105,9 @@ test('cleanSettings: advisor, fast mode, dan saran prompt divalidasi', () => {
   assert.equal(defaults.claudeFastMode, false);
   assert.equal(defaults.claudePromptSuggestions, false);
   assert.equal(defaults.claudeForwardSubagentText, false);
+  assert.equal(defaults.claudeNoSessionPersistence, false);
+  assert.equal(defaults.claudeSafeMode, false);
+  assert.equal(defaults.claudeDebug, false);
   hub.updateSettings(project.id, { claudeAdvisor: 'opus', claudeFastMode: true, claudePromptSuggestions: true, claudeAutocompact: '500k', claudeIncludeHookEvents: true });
   assert.equal(hub.settingsFor(project.id).claudeAdvisor, 'opus');
   assert.equal(hub.settingsFor(project.id).claudeFastMode, true);

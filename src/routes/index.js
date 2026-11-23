@@ -4,6 +4,7 @@ import { Router } from './router.js';
 import * as account from './account.js';
 import * as addDirs from './add-dirs.js';
 import * as approvals from './approvals.js';
+import * as archive from './archive.js';
 import * as attention from './attention.js';
 import * as autologon from './autologon.js';
 import * as backup from './backup.js';
@@ -68,6 +69,7 @@ export function buildRouter() {
     attention.register,
     insights.register,
     compare.register,
+    archive.register,
     cliBridge.register,
     templates.register,
     team.register,

@@ -35,6 +35,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `--autocompact <auto\|tokens>` | ⚙️ Flag Claude → **Auto-compact** (`auto`/`500k`, minimal 100k) → `--autocompact` | ✅ |
 | `--include-hook-events` | ⚙️ Flag Claude → **Event hook di chat** → hook yang gagal muncul sebagai baris peringatan (nama event + baris pertama stderr) | ✅ |
 | `--forward-subagent-text` | ⚙️ Flag Claude → **Transkrip subagent di kartu delegasi**: kata-kata subagent ikut tersimpan di detail kartu, lalu laporan akhirnya | ✅ |
+| `--no-session-persistence`, `--safe-mode`, `--debug` | ⚙️ Flag Claude → **Mode privat**, **Safe mode**, **Debug log** | ✅ |
 | `claude auto-mode defaults\|reset`, `/auto-mode-setup` | ⋯ → **Auto mode Claude** (editor `autoMode` di `~/.claude/settings.json`, laptop) | ✅ (reset = kosongkan daftar) |
 | `claude purge` | ⋯ → **Bersihkan data Claude** (pratinjau `--dry-run`, ketik path folder kerja untuk konfirmasi, laptop, tidak saat giliran/antrian berjalan; worktree aktif ikut jadi sasaran) | ✅ |
 | `claude import` (dari Codex/Cursor/…) | 🚫 sesi interaktif yang menulis config agen lain; menjalankannya butuh TTY dan keputusan per item | 🚫 |
@@ -66,7 +67,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Providers (login, kustom, headers/body) | 👤 Akun → provider, 🔌 header/body; akun tersimpan bisa diganti (credential.activate) | ✅ |
 | Varian model `#variant` | pemilih model | ✅ |
 | Plugins | 🧩 Plugin OpenCode | ✅ |
-| MCP servers | 🔌 MCP | ✅ |
+| MCP servers | 🔌 MCP; status/reconnect/disable/login; field lanjutan (`timeout`, `codemode`, `pool`, `protocol`, `disabled`) lewat tab JSON | ✅ |
 | Worktree | ⎇ Worktree (aplikasi) | ✅ |
 | `opencode uninstall/share/run/service get-set-unset/debug heap-dump/mini/serve/acp/api/pair/ci` | internal/khusus terminal/berisiko | 🚫 |
 
@@ -77,6 +78,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Papan “perlu tindakan” lintas project | izin/rencana/pertanyaan, model hilang, mode lama, budget, CI gagal, OpenCode berhenti, antrian, giliran terputus, jadwal gagal; tunda 1 jam | ✅ |
 | Laporan pola kerja | biaya/token/permintaan/sesi per project, model, dan jam (7/30/90 hari) | ✅ |
 | Bandingkan model | satu pertanyaan ke dua model Claude (tool mati, sesi tidak disimpan), jawaban + biaya + durasi | ✅ |
+| Tanya arsip | cari lintas transkrip, jawab hanya dari kutipan dengan nomor sumber yang bisa dibuka | ✅ |
 
 ---
 

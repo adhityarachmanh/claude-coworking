@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🔒 Mode privat, safe mode, dan debug Claude.** ⚙️ Flag Claude kini punya **Mode privat** (`--no-session-persistence`: transkrip tidak ditulis ke disk, sesi tidak bisa dilanjutkan), **Safe mode** (`--safe-mode`: CLAUDE.md, skill, plugin, hook, dan MCP dilepas untuk diagnosa), dan **Debug log** (`--debug`). Semua per project dan berlaku pada pesan berikutnya.
+- **💬 Tanya arsip.** ⋯ → **Tanya arsip** mencari pertanyaan di transkrip sesi lama semua project, lalu menjawab **hanya dari kutipan** yang ditemukan dengan nomor sumber `[n]`; daftar sumber bisa dibuka langsung ke sesi aslinya. Jawaban memakai Claude tanpa tool dan tanpa menyimpan sesi, jadi memakai token.
+
 ## 1.1.0
 
 - **⚠ Papan perlu tindakan lebih lengkap.** Selain izin/rencana, budget, antrian, giliran terputus, dan jadwal, daftar di atas 🗂 Semua project kini juga menandai **CI gagal**, **model yang tidak tersedia lagi** (mis. setelah logout provider), **pilihan mode izin lama**, dan **proses OpenCode yang berhenti**. Ketuk item model/mode untuk membuka pengaturan giliran.

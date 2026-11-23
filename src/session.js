@@ -49,7 +49,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
 
 // The team setting needs a fresh process, and so does a change of workspace (e.g. between a folder and its worktree).
-const restartKey = (s) => String(s.team) + '|' + (s.workspacePath ?? '') + '|' + (s.additionalDirectories ?? []).join('\n') + '|' + String(s.claudeFallbackModel ?? '') + '|' + String(s.claudeMaxTurns ?? '') + '|' + String(s.claudeMaxBudgetUsd ?? '') + '|' + String(s.claudeTools ?? '') + '|' + (Array.isArray(s.claudeAllowedTools) ? s.claudeAllowedTools : []).join('\n') + '|' + (Array.isArray(s.claudeDisallowedTools) ? s.claudeDisallowedTools : []).join('\n') + '|' + String(s.claudeSettingSources ?? '') + '|' + String(s.claudeAdvisor ?? '') + '|' + String(Boolean(s.claudeFastMode)) + '|' + String(Boolean(s.claudePromptSuggestions)) + '|' + String(s.claudeAutocompact ?? '') + '|' + String(Boolean(s.claudeIncludeHookEvents)) + '|' + String(Boolean(s.claudeForwardSubagentText));
+const restartKey = (s) => String(s.team) + '|' + (s.workspacePath ?? '') + '|' + (s.additionalDirectories ?? []).join('\n') + '|' + String(s.claudeFallbackModel ?? '') + '|' + String(s.claudeMaxTurns ?? '') + '|' + String(s.claudeMaxBudgetUsd ?? '') + '|' + String(s.claudeTools ?? '') + '|' + (Array.isArray(s.claudeAllowedTools) ? s.claudeAllowedTools : []).join('\n') + '|' + (Array.isArray(s.claudeDisallowedTools) ? s.claudeDisallowedTools : []).join('\n') + '|' + String(s.claudeSettingSources ?? '') + '|' + String(s.claudeAdvisor ?? '') + '|' + String(Boolean(s.claudeFastMode)) + '|' + String(Boolean(s.claudePromptSuggestions)) + '|' + String(s.claudeAutocompact ?? '') + '|' + String(Boolean(s.claudeIncludeHookEvents)) + '|' + String(Boolean(s.claudeForwardSubagentText)) + '|' + String(Boolean(s.claudeNoSessionPersistence)) + '|' + String(Boolean(s.claudeSafeMode)) + '|' + String(Boolean(s.claudeDebug));
 
 const streamArgs = (claude) => [...claude.args, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
 
@@ -915,6 +915,9 @@ export class ClaudeSession {
     if (settings.claudeAutocompact) args.push('--autocompact', settings.claudeAutocompact);
     if (settings.claudeIncludeHookEvents) args.push('--include-hook-events');
     if (settings.claudeForwardSubagentText) args.push('--forward-subagent-text');
+    if (settings.claudeNoSessionPersistence) args.push('--no-session-persistence');
+    if (settings.claudeSafeMode) args.push('--safe-mode');
+    if (settings.claudeDebug) args.push('--debug');
     // 📂 Extra folders outside the project. One variadic flag: `--add-dir <directories...>` (Claude Code 2.1.328).
     if (settings.additionalDirectories?.length) args.push('--add-dir', ...settings.additionalDirectories);
     // 🤖 An unanswered permission request is DENIED instead of hanging the turn (Claude Code 2.1.319+). Plan already

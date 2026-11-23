@@ -162,6 +162,7 @@
               <button role="menuitem" data-more="purge" data-cap="permissions" title="Hapus riwayat, memory, dan snapshot Claude Code untuk project ini (bukan folder project)">🧹 Bersihkan data Claude…</button>
               <button role="menuitem" data-more="insights" title="Pola kerja 7/30/90 hari: biaya, token, project, model, dan jam tersibuk">📈 Pola kerja…</button>
               <button role="menuitem" data-more="compare" title="Jalankan pertanyaan yang sama ke dua model Claude, lihat jawaban dan biayanya">⚖️ Bandingkan model…</button>
+              <button role="menuitem" data-more="archive-ask" title="Tanya lintas transkrip sesi lama; jawaban hanya dari kutipan arsip">💬 Tanya arsip…</button>
               <button role="menuitem" data-more="oc-saved-permissions" data-cap="permissions" title="Izin “Selalu izinkan” OpenCode yang tersimpan di laptop ini">🛡️ Izin tersimpan OpenCode…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
@@ -1565,6 +1566,18 @@
       </div>
     </div>
 
+    <div id="archive-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="archive-title">
+        <div class="modal-head"><b id="archive-title">Tanya arsip</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Mencari di transkrip sesi Claude, lalu menjawab hanya dari kutipan yang ditemukan (dengan nomor sumber). Satu jawaban memakai token.</p>
+        <label class="oc-field"><span>Pertanyaan</span><textarea id="archive-q" rows="3" maxlength="500" placeholder="mis. kapan kita memperbaiki bug checkout?"></textarea></label>
+        <p id="archive-error" class="field-error" role="alert"></p>
+        <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="archive-run" class="primary">Cari &amp; jawab</button></div>
+        <div id="archive-answer" class="archive-answer" aria-live="polite"></div>
+        <ul id="archive-sources" class="archive-sources"></ul>
+      </div>
+    </div>
+
     <div id="compare-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="compare-title">
         <div class="modal-head"><b id="compare-title">Bandingkan model Claude</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
@@ -1636,6 +1649,12 @@
           <label class="oc-field"><span>Event hook di chat (--include-hook-events)</span><input id="cf-hook-events" type="checkbox" /></label>
         </div>
         <label class="oc-field"><span>Transkrip subagent di kartu delegasi (--forward-subagent-text)</span><input id="cf-subagent-text" type="checkbox" /></label>
+        <div class="oc-form-grid">
+          <label class="oc-field"><span>Mode privat: sesi tidak disimpan (--no-session-persistence)</span><input id="cf-private" type="checkbox" /></label>
+          <label class="oc-field"><span>Safe mode: tanpa kustomisasi (--safe-mode)</span><input id="cf-safe" type="checkbox" /></label>
+          <label class="oc-field"><span>Debug log (--debug)</span><input id="cf-debug" type="checkbox" /></label>
+        </div>
+        <p class="muted small">Mode privat membuat sesi tidak bisa dilanjutkan; safe mode melepas CLAUDE.md, skill, plugin, hook, dan MCP untuk diagnosa.</p>
         <p class="muted small">Advisor dan fast mode hanya berlaku pada model/provider yang mendukung; fast mode memakai kredit penggunaan dan bisa lebih mahal.</p>
         <p id="claude-flags-error" class="field-error" role="alert"></p>
         <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="claude-flags-save" class="primary">💾 Simpan flag</button></div>
@@ -2022,6 +2041,7 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='purge']" data-mutates data-cap="permissions"><span aria-hidden="true">🧹</span><span>Bersihkan data Claude</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='insights']"><span aria-hidden="true">📈</span><span>Pola kerja</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='compare']"><span aria-hidden="true">⚖️</span><span>Bandingkan model</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='archive-ask']"><span aria-hidden="true">💬</span><span>Tanya arsip</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='oc-saved-permissions']" data-mutates data-cap="permissions"><span aria-hidden="true">🛡️</span><span>Izin tersimpan OpenCode</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>

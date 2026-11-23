@@ -78,6 +78,7 @@ import { initPromptSuggestion } from './features/prompt-suggestion.js';
 import { initSavedPermissions } from './features/opencode-saved-permissions.js';
 import { initInsights } from './features/insights.js';
 import { initCompare } from './features/compare.js';
+import { initArchiveAsk } from './features/archive-ask.js';
 import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
@@ -135,6 +136,7 @@ initPromptSuggestion(); // 💡 saran prompt berikutnya mengisi kotak, tidak men
 initSavedPermissions(); // 🛡️ izin tersimpan OpenCode
 initInsights(); // 📈 pola kerja
 initCompare(); // ⚖️ bandingkan dua model
+initArchiveAsk(); // 💬 tanya arsip
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();
