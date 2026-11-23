@@ -2037,7 +2037,7 @@ test('🧩 Ekstensi: plugins (install with a shown marketplace command, enable/d
   mkdirSync(path.join(project.path, '.claude'), { recursive: true });
   writeFileSync(path.join(project.path, '.claude', 'settings.local.json'), JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: 'npx prettier --write' }] }] } }));
   const hooks = (await api(`/api/projects/${id}/hooks`)).body.hooks;
-  assert.deepEqual(hooks.map((h) => [h.event, h.matcher, h.commands[0]]), [['PostToolUse', 'Edit|Write', 'npx prettier --write']]);
+  assert.deepEqual(hooks.map((h) => [h.event, h.matcher, h.handlers[0].command]), [['PostToolUse', 'Edit|Write', 'npx prettier --write']]);
   rmSync(path.join(project.path, '.claude', 'settings.local.json'));
 });
 
