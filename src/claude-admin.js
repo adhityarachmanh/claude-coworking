@@ -226,6 +226,7 @@ const loadHooksFile = (file) => {
 };
 
 const writeHooksFile = (file, data, indent) => {
+  mkdirSync(path.dirname(file), { recursive: true });
   const temp = path.join(path.dirname(file), `.settings-${Date.now().toString(36)}.tmp`);
   writeFileSync(temp, `${JSON.stringify(data, null, indent)}\n`);
   renameSync(temp, file);
