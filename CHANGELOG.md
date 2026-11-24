@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **💻 Mode Terminal.** Tampilan ketiga untuk kantor (tombol **💻 Terminal** di samping 🧠 Mode Otak): satu layar terminal ala hacker per role yang bekerja. Setiap baris berasal dari chat yang asli — prompt di layar Lead, papan task dan pembagian tugas di layar PM, perintah dengan output live, edit sebagai diff, hitungan test, dan permintaan izin — di layar role yang mengerjakannya. Delegasi tampil sebagai paket data antarpanel, kegagalan membuat panel bergetar merah. Tanpa token tambahan.
+
 ## 1.7.0
 
 - **🧩 Plugin satu pintu untuk dua mesin.** Dialog **Ekstensi** mengikuti mesin project: Claude Code menampilkan marketplace (pasang, aktif/nonaktif, hapus) beserta Agents/Hooks; OpenCode menampilkan pengelola plugin npm/URL Git (tambah, hapus, update, cek update, update semua). Bisa dibuka dari ⋯ → **🧩 Plugin & ekstensi…**, ⚙ → **🧩 Plugin**, atau `/plugin`. Blok plugin OpenCode yang lama di Kompatibilitas diganti satu pintu ini.

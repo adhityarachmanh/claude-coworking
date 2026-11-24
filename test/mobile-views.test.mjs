@@ -536,7 +536,7 @@ for (const vp of PHONES) {
       if (await page.eval(() => document.querySelector('.office').classList.contains('team-hidden'))) await page.click('#team-toggle');
       await page.waitFor(() => document.querySelector('#team .member'), { timeoutMs: 3000, message: 'kartu tim tampil' });
       const a = await page.eval(auditView, 'office');
-      assert.deepEqual(a.chrome, ['dash-bar', 'view-mode', 'team-toggle'], `kontrol view: ${a.chrome.join(', ')}`);
+      assert.deepEqual(a.chrome, ['dash-bar', 'view-mode', 'view-terminal', 'team-toggle'], `kontrol view: ${a.chrome.join(', ')}`);
       const cards = await page.eval(() => [...document.querySelectorAll('#team .member')].map((m) => Math.round(m.getBoundingClientRect().height)));
       assert.ok(cards.length > 0 && cards.every((h) => h >= 44), `tinggi kartu ${cards.join(',')}`);
       const stage = await page.eval(() => {

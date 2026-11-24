@@ -1,17 +1,33 @@
-// 🧠 Mode Otak ↔ 🏢 Kantor: which view of the team the stage shows (office/brain.js), remembered per browser.
+// 🏢 Kantor · 🧠 Mode Otak · 💻 Mode Terminal: which view of the team the stage shows (office/brain.js,
+// office/terminal.js), remembered per browser. Each button toggles its own view on and off (back to the office).
 import { $ } from '../core/dom.js';
-import { brain } from '../core/scenes.js';
+import { brain, terminal } from '../core/scenes.js';
 import { state } from '../core/state.js';
 
 const KEY = 'office.viewMode';
 
-function apply(on) {
+/** @param {'office'|'brain'|'terminal'} mode */
+function apply(mode) {
+  const on = mode === 'brain';
   brain.setOn(on);
+  terminal.setOn(mode === 'terminal');
   document.querySelector('.office')?.classList.toggle('brain-on', on); // the people grid turns into orbs too
   document.body.classList.toggle('brain-on', on); // …and every other avatar (chat, edit-names, Kelola tim)
   const btn = $('#view-mode');
   btn.setAttribute('aria-pressed', String(on));
   btn.textContent = on ? '🏢 Mode Kantor' : '🧠 Mode Otak';
+  const term = $('#view-terminal');
+  term.setAttribute('aria-pressed', String(mode === 'terminal'));
+  term.textContent = mode === 'terminal' ? '🏢 Mode Kantor' : '💻 Terminal';
+}
+
+const current = () => (brain.on ? 'brain' : terminal.on ? 'terminal' : 'office');
+function choose(mode) {
+  const next = current() === mode ? 'office' : mode;
+  apply(next);
+  try {
+    localStorage.setItem(KEY, next);
+  } catch {}
 }
 
 /**
@@ -37,16 +53,11 @@ async function onNeuron(role) {
 
 export function initViewMode() {
   $('#stage').addEventListener('brain-neuron', (e) => onNeuron(e.detail.role));
-  let on = false;
+  let mode = 'office';
   try {
-    on = localStorage.getItem(KEY) === 'brain';
+    mode = localStorage.getItem(KEY) ?? 'office';
   } catch {}
-  apply(on);
-  $('#view-mode').addEventListener('click', () => {
-    const next = !brain.on;
-    apply(next);
-    try {
-      localStorage.setItem(KEY, next ? 'brain' : 'office');
-    } catch {}
-  });
+  apply(['brain', 'terminal'].includes(mode) ? mode : 'office');
+  $('#view-mode').addEventListener('click', () => choose('brain'));
+  $('#view-terminal').addEventListener('click', () => choose('terminal'));
 }

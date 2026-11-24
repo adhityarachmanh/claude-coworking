@@ -218,7 +218,18 @@ Siapa yang mengerjakan setiap langkah (file, perintah shell, MCP, skill, tipe su
 | Minta izin / `AskUserQuestion` | Yang bertanya mengangkat tangan, seisi kantor menunggu |
 | Error / selesai | Layar merah dan asap / confetti |
 
-Monitor tiap meja menunjukkan jenis kerja (kode, terminal, test, dokumen, desain, database, CI/CD, …). Saat idle, tim ngopi, duduk di sofa, atau ngobrol. **🎨 Tema kantor** (⚙): Kantor, Halloween, Natal, Lebaran, 17 Agustus (disimpan per browser).
+Monitor tiap meja menunjukkan jenis kerja (kode, terminal, test, dokumen, desain, database, CI/CD, …). Saat idle, tim ngopi, duduk di sofa, atau ngobrol.
+
+**💻 Mode Terminal** (tombol di bawah kantor, di samping 🧠 Mode Otak; diingat per browser): kantor menjadi dinding layar terminal ala hacker, **satu panel per role yang bekerja di sesi ini**. Isinya bukan animasi karangan: setiap baris adalah baris chat yang asli, di panel role yang mengerjakannya.
+
+| Panel | Isi |
+|---|---|
+| Lead | Prompt-mu (`> …`) dan delegasi langsung |
+| PM (juru bicara) | Papan task (`[x]` / `[>]` / `[ ]`), jawaban tim (`» …`), dan tugas yang dibagikan (`⇢ role: …`) |
+| Role lain | Tugas yang diterima (`⇠ PM: …`), perintah beserta output-nya (live saat masih berjalan), edit sebagai diff (`-` merah / `+` hijau), file yang dibaca/dicari, hitungan test `✔N ✖N`, laporan balik (`✔ laporan ke PM`) |
+| Izin | `⚠ ACCESS REQUEST ▸ …` dengan bingkai kuning berdenyut |
+
+Delegasi berjalan sebagai paket bit dari panel ke panel; kegagalan membuat panel bergetar merah. Panel role yang menganggur meredup; role tanpa kerja tercatat di baris *standby*. Klik panel = sama seperti klik neuron di Mode Otak (kartu izin, ⧗ tugas latar, atau tab Aktivitas). Hujan karakter di latar hanya dekorasi. **🎨 Tema kantor** (⚙): Kantor, Halloween, Natal, Lebaran, 17 Agustus (disimpan per browser).
 
 ## Project & dashboard
 

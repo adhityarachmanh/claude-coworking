@@ -38,7 +38,7 @@ import { setLaptopOnly, setReadOnlyApi } from './api.js';
 import { $ } from './dom.js';
 import { toast } from './api.js';
 import { startStreamShare } from './stream-share.js';
-import { brain, scenes } from './scenes.js';
+import { brain, scenes, terminal } from './scenes.js';
 import { DEMO_ID, projectName, state } from './state.js';
 
 let share = null;
@@ -163,7 +163,10 @@ const handlers = {
   office(evt, live) {
     (state.events[evt.project] ??= []).push(evt);
     scenes.get(evt.project)?.handle(evt, live);
-    if (live && evt.project === state.active) brain.event(evt); // 🧠 Mode Otak: signals and pulses
+    if (live && evt.project === state.active) {
+      brain.event(evt); // 🧠 Mode Otak: signals and pulses
+      terminal.event(evt); // 💻 Mode Terminal: packets between panels, glitches
+    }
     if (evt.project === state.active) {
       appendActivity(evt, true);
       if (['tool_end', 'stop'].includes(evt.kind)) scheduleChanges();
