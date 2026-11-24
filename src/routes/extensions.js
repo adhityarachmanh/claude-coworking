@@ -3,7 +3,7 @@
 // subagent (~/.claude/agents: every project) and the GitHub login: laptop only (a plugin runs code on this laptop;
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
-import { AdminError, backgroundAgentAction, backgroundAgentLogs, claudePurgePlan, claudePurgeProject, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listBackgroundAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, readAutoMode, saveAgent, saveAutoMode, saveHook } from '../claude-admin.js';
+import { AdminError, backgroundAgentAction, backgroundAgentLogs, claudePurgePlan, claudePurgeProject, daemonStatus, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listBackgroundAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, pluginConfigure, pluginDetails, readAutoMode, saveAgent, saveAutoMode, saveHook } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { json } from './http.js';
@@ -75,6 +75,28 @@ export function register(router) {
     { maxBody: 4096 },
   );
 
+  // ℹ details (inventory + token cost) and ⚙ configure (userConfig options; saving goes through stdin).
+  router.post(
+    '/api/claude/plugins/details',
+    guard(({ claude }, req, res, params, body) => pluginDetails(claude, String(body.id ?? '')), { claude: true }),
+    { maxBody: 1024 },
+  );
+  router.post(
+    '/api/claude/plugins/configure',
+    guard(
+      async ({ claude, sessions }, req, res, params, body) => {
+        const result = await pluginConfigure(claude, { id: String(body.id ?? ''), values: Object.hasOwn(body, 'values') ? body.values : null });
+        if (Object.hasOwn(body, 'values')) {
+          console.log(`Opsi plugin disimpan: ${String(body.id).slice(0, 120)}`);
+          sessions.accountChanged(); // restart required to apply, as the CLI says
+        }
+        return result;
+      },
+      { laptop: true, claude: true },
+    ),
+    { maxBody: 64 * 1024 },
+  );
+
   // 🖥 Claude background sessions (agent view, `claude agents --json`): a global list, not per project.
   router.post(
     '/api/claude/background-agents',
@@ -101,6 +123,11 @@ export function register(router) {
   router.post(
     '/api/claude/background-agents/logs',
     guard(({ claude }, req, res, params, body) => backgroundAgentLogs(claude, String(body.ref ?? ''))),
+    { maxBody: 1024 },
+  );
+  router.post(
+    '/api/claude/background-agents/daemon',
+    guard(({ claude }) => daemonStatus(claude)),
     { maxBody: 1024 },
   );
 

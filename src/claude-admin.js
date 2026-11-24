@@ -65,7 +65,7 @@ export async function listPlugins(bin, { force = false } = {}) {
   } catch {
     throw new AdminError(502, 'Daftar plugin tidak terbaca.');
   }
-  const installed = (parsed.installed ?? []).map((p) => ({ id: p.id, version: p.version ?? '', scope: p.scope ?? '', enabled: p.enabled !== false }));
+  const installed = (parsed.installed ?? []).map((p) => ({ id: p.id, version: p.version ?? '', scope: p.scope ?? '', enabled: p.enabled !== false, hasUserConfig: p.hasUserConfig === true }));
   const have = new Set(installed.map((p) => p.id));
   const available = (parsed.available ?? [])
     .filter((p) => p?.pluginId && !have.has(p.pluginId))
@@ -123,6 +123,75 @@ export async function listMarketplaces(bin) {
     source: String(m.source ?? '').slice(0, 60),
     repo: String(m.repo ?? '').slice(0, 300),
   }));
+}
+
+/** ℹ `claude plugin details`: the component inventory and projected token cost, as text (no JSON in 2.1.331). */
+export async function pluginDetails(bin, id) {
+  if (!PLUGIN_ID.test(String(id ?? ''))) throw new AdminError(400, 'Id plugin tidak valid.');
+  const r = await runClaude(bin, ['plugin', 'details', String(id)], { timeout: 60_000 });
+  if (!r.ok) throw new AdminError(502, firstLine(r));
+  return { text: r.out.trimEnd().slice(-20_000) };
+}
+
+const names = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').map((x) => x.slice(0, 80)).slice(0, 50) : []);
+
+/** The `plugin configure --json` answer: schema/choices/inputs plus which options are set (never a sensitive value). */
+function cleanConfigure(parsed) {
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const inputs = {};
+  for (const [k, v] of Object.entries(obj(parsed?.inputs)).slice(0, 50)) if (typeof v === 'string') inputs[String(k).slice(0, 80)] = v.slice(0, 2000);
+  return { schema: obj(parsed?.schema), choices: obj(parsed?.choices), inputs, configured: names(parsed?.configured), unconfigured: names(parsed?.unconfigured) };
+}
+
+/**
+ * ⚙ `claude plugin configure`: without values, the declared options (JSON); with values, saves them through stdin so
+ * a secret never becomes an argument. Only single-line strings, bounded, as the CLI itself requires.
+ */
+export async function pluginConfigure(bin, { id, values = null } = {}) {
+  if (!PLUGIN_ID.test(String(id ?? ''))) throw new AdminError(400, 'Id plugin tidak valid.');
+  if (values == null) {
+    const r = await runClaude(bin, ['plugin', 'configure', String(id), '--json'], { timeout: 30_000 });
+    if (!r.ok) throw new AdminError(502, firstLine(r));
+    let parsed;
+    try {
+      parsed = JSON.parse(r.out.trim().split('\n').filter(Boolean).at(-1));
+    } catch {
+      throw new AdminError(502, 'Opsi plugin tidak terbaca.');
+    }
+    return cleanConfigure(parsed);
+  }
+  if (!values || typeof values !== 'object' || Array.isArray(values)) throw new AdminError(400, 'Nilai opsi tidak valid.');
+  const clean = {};
+  for (const [key, value] of Object.entries(values).slice(0, 50)) {
+    if (!/^[A-Za-z0-9_.-]{1,80}$/.test(key)) throw new AdminError(400, 'Nama opsi tidak valid.');
+    const text = String(value ?? '');
+    if (text.length > 2000 || /[\r\n]/.test(text)) throw new AdminError(400, 'Nilai opsi harus satu baris, maksimal 2000 karakter.');
+    clean[key] = text;
+  }
+  const r = await new Promise((resolve) => {
+    execFileTree(
+      bin.command,
+      [...bin.args, 'plugin', 'configure', String(id), '--values-stdin', '--json'],
+      { encoding: 'utf8', timeout: 30_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024, env: childEnv({ CI: '1', NO_COLOR: '1' }), input: JSON.stringify(clean) },
+      (err, out, errOut) => resolve({ ok: !err, out: String(out ?? ''), err: String(errOut ?? '') }),
+    );
+  });
+  let result = null;
+  try {
+    result = JSON.parse(r.out.trim().split('\n').filter(Boolean).at(-1));
+  } catch {
+    // older CLI: plain text
+  }
+  if (!r.ok) throw new AdminError(502, firstLine({ out: r.out, err: r.err }));
+  pluginCache = null;
+  return { ok: true, saved: names(result?.saved), unconfigured: names(result?.unconfigured) };
+}
+
+/** 🖥 `claude daemon status`: text plus whether the supervisor is running (it exits 1 while stopped). */
+export async function daemonStatus(bin) {
+  const r = await runClaude(bin, ['daemon', 'status'], { timeout: 15_000 });
+  const text = `${r.out}\n${r.err}`.trim().slice(0, 4000);
+  return { running: r.ok && !/not running/i.test(text), text };
 }
 
 /** add (a URL/path/owner-repo) | remove (a configured name) | update (one name, or every marketplace). */

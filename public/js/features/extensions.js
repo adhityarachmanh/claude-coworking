@@ -8,7 +8,7 @@ import { openModal } from '../ui/modals.js';
 import { guardCap } from './engine.js';
 import { loadOpenCodePlugins } from './opencode-check.js';
 
-const ext = { tab: 'plugins', project: null, plugins: null, marketplaces: null, filter: '', agents: [], editing: null, hooks: [], hookEvents: [], hookEditing: null };
+const ext = { tab: 'plugins', project: null, plugins: null, marketplaces: null, filter: '', agents: [], editing: null, hooks: [], hookEvents: [], hookEditing: null, view: null };
 const MAX_LIST = 60;
 
 export function openExtensions(tab = 'plugins') {
@@ -20,6 +20,7 @@ export function openExtensions(tab = 'plugins') {
   ext.project = state.active && state.active !== DEMO_ID ? state.active : null;
   ext.tab = opencode ? 'plugins' : tab;
   ext.editing = null;
+  ext.view = null;
   openModal('ext-modal');
   render();
   load();
@@ -72,10 +73,46 @@ function render() {
     return;
   }
   body.innerHTML = '';
-  if (ext.tab === 'plugins') body.insertAdjacentHTML('beforeend', pluginsHtml());
+  if (ext.tab === 'plugins') body.insertAdjacentHTML('beforeend', ext.view ? pluginViewHtml() : pluginsHtml());
   else if (!ext.project) body.insertAdjacentHTML('beforeend', '<p class="muted">Pilih project dulu.</p>');
   else if (ext.tab === 'agents') body.insertAdjacentHTML('beforeend', ext.editing ? agentFormHtml(ext.editing) : agentsHtml());
   else body.insertAdjacentHTML('beforeend', hooksHtml());
+}
+
+/** ℹ details or ⚙ userConfig options of one plugin, inside the same dialog (with a way back). */
+function pluginViewHtml() {
+  const v = ext.view;
+  const back = `<div class="acct-actions"><button type="button" class="ghost" data-plugin-back>← Kembali</button><b>${escapeHtml(v.id)}</b></div>`;
+  if (v.mode === 'details') return `${back}<pre class="cc-output">${escapeHtml(v.details || 'Memuat detail…')}</pre>`;
+  if (!v.options) return `${back}<p class="muted">Memuat opsi…</p>`;
+  const schema = v.options.schema && typeof v.options.schema === 'object' ? v.options.schema : {};
+  const props = schema.properties && typeof schema.properties === 'object' ? schema.properties : {};
+  const keys = Object.keys(props).slice(0, 50);
+  if (!keys.length) return `${back}<p class="muted small">Plugin ini tidak punya opsi yang bisa diatur.</p>`;
+  const choices = v.options.choices && typeof v.options.choices === 'object' ? v.options.choices : {};
+  const inputs = v.options.inputs && typeof v.options.inputs === 'object' ? v.options.inputs : {};
+  const configured = Array.isArray(v.options.configured) ? v.options.configured : [];
+  const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+  const fields = keys
+    .map((key) => {
+      const def = props[key] && typeof props[key] === 'object' ? props[key] : {};
+      const set = configured.includes(key);
+      const value = typeof inputs[key] === 'string' ? inputs[key] : '';
+      const opts = Array.isArray(choices[key]) ? choices[key] : Array.isArray(def.enum) ? def.enum : null;
+      const control = opts
+        ? `<select data-opt="${escapeHtml(key)}">${opts
+            .map((o) => {
+              const val = typeof o === 'object' ? String(o.value ?? o.name ?? '') : String(o);
+              const label = typeof o === 'object' ? String(o.label ?? o.name ?? val) : val;
+              return `<option value="${escapeHtml(val)}"${val === value ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+            })
+            .join('')}</select>`
+        : `<input data-opt="${escapeHtml(key)}" value="${escapeHtml(value)}" placeholder="${set ? 'sudah diset (kosong = biarkan)' : required.has(key) ? 'wajib' : 'opsional'}" autocomplete="off" spellcheck="false" />`;
+      return `<label class="oc-field"><span>${escapeHtml(def.title ?? key)}${required.has(key) ? ' *' : ''}${set ? ' · sudah diset' : ''}</span>${control}${def.description ? `<small class="muted">${escapeHtml(String(def.description).slice(0, 300))}</small>` : ''}</label>`;
+    })
+    .join('');
+  const missing = Array.isArray(v.options.unconfigured) && v.options.unconfigured.length ? `<p class="muted small">Belum diset: ${v.options.unconfigured.map(escapeHtml).join(', ')}</p>` : '';
+  return `${back}${missing}<form id="ext-plugin-config" class="oc-form">${fields}<p class="muted small">Nilai yang dikosongkan tidak diubah. Nilai sensitif yang sudah diset tidak pernah ditampilkan.</p><div class="acct-actions"><button class="primary">💾 Simpan opsi</button></div></form>`;
 }
 
 // ---------- plugins ----------
@@ -87,7 +124,7 @@ function pluginsHtml() {
   const installed = p.installed.length
     ? `<ul class="ext-list">${p.installed
         .map((x) => `<li data-id="${escapeHtml(x.id)}"><div><b>${escapeHtml(x.id)}</b> <small class="muted">v${escapeHtml(x.version)} · ${escapeHtml(x.scope)}</small></div><div class="ext-actions">${
-          local ? `<button class="ghost" data-plugin="update" title="Perbarui ke versi terbaru dari marketplace">⬆ Update</button><button class="ghost" data-plugin="${x.enabled ? 'disable' : 'enable'}">${x.enabled ? '⏸ Nonaktifkan' : '▶ Aktifkan'}</button><button class="ghost danger-text" data-plugin="uninstall">Hapus</button>` : `<small class="muted">${x.enabled ? 'aktif' : 'nonaktif'}</small>`
+          local ? `<button class="ghost" data-plugin-detail="${escapeHtml(x.id)}">ℹ Detail</button>${x.hasUserConfig ? `<button class="ghost" data-plugin-config="${escapeHtml(x.id)}">⚙ Opsi</button>` : ''}<button class="ghost" data-plugin="update" title="Perbarui ke versi terbaru dari marketplace">⬆ Update</button><button class="ghost" data-plugin="${x.enabled ? 'disable' : 'enable'}">${x.enabled ? '⏸ Nonaktifkan' : '▶ Aktifkan'}</button><button class="ghost danger-text" data-plugin="uninstall">Hapus</button>` : `<small class="muted">${x.enabled ? 'aktif' : 'nonaktif'}</small>`
         }</div></li>`)
         .join('')}</ul>`
     : '<p class="muted small">Belum ada plugin terpasang.</p>';
@@ -108,6 +145,31 @@ function pluginsHtml() {
       .join('')}</ul>
     ${matches.length > MAX_LIST ? `<p class="muted small">${matches.length - MAX_LIST} lainnya: persempit pencarian.</p>` : ''}
     ${local ? '' : '<p class="muted small">Memasang/menghapus plugin hanya dari laptop (plugin menjalankan kode di laptop).</p>'}`;
+}
+
+/** ℹ component inventory + token cost of one plugin (text from the CLI). */
+async function openPluginDetails(id) {
+  ext.view = { id, mode: 'details', details: '' };
+  render();
+  try {
+    ext.view.details = (await api('/api/claude/plugins/details', { id })).text;
+  } catch (err) {
+    ext.view.details = err.message;
+  }
+  render();
+}
+
+/** ⚙ userConfig options; saving sends only the fields the user filled in (empty = keep). */
+async function openPluginConfig(id) {
+  ext.view = { id, mode: 'config', options: null };
+  render();
+  try {
+    ext.view.options = await api('/api/claude/plugins/configure', { id });
+  } catch (err) {
+    ext.view = null;
+    toast(err.message, 'warn');
+  }
+  render();
 }
 
 /** 🏪 add / remove / update one marketplace; the returned list replaces the rendered one. */
@@ -247,6 +309,7 @@ export function initExtensions() {
     if (!tab || tab === ext.tab) return;
     ext.tab = tab;
     ext.editing = null;
+    ext.view = null;
     render();
     load();
   });
@@ -267,6 +330,15 @@ export function initExtensions() {
     if (mpUpdate) return marketplaceAct('update', { name: mpUpdate.dataset.mpUpdate });
     const mpRemove = t.closest('[data-mp-remove]');
     if (mpRemove) return marketplaceAct('remove', { name: mpRemove.dataset.mpRemove });
+    const detail = t.closest('[data-plugin-detail]');
+    if (detail) return openPluginDetails(detail.dataset.pluginDetail);
+    const config = t.closest('[data-plugin-config]');
+    if (config) return openPluginConfig(config.dataset.pluginConfig);
+    if (t.closest('[data-plugin-back]')) {
+      ext.view = null;
+      render();
+      return;
+    }
     if (t.closest('[data-plugin]')) return pluginAct(t.closest('[data-plugin]'));
     if (t.closest('[data-agent-new]')) return (ext.editing = { scope: 'project' }), render();
     if (t.closest('[data-agent-cancel]')) return (ext.editing = null), render();
@@ -302,6 +374,21 @@ export function initExtensions() {
     }
   });
   $('#ext-body').addEventListener('submit', async (e) => {
+    if (e.target.id === 'ext-plugin-config') {
+      e.preventDefault();
+      const id = ext.view?.id;
+      if (!id) return;
+      const values = {};
+      for (const el of e.target.querySelectorAll('[data-opt]')) if (el.value !== '') values[el.dataset.opt] = el.value;
+      try {
+        const r = await api('/api/claude/plugins/configure', { id, values });
+        toast(`Opsi ${id} disimpan${r.unconfigured?.length ? ` · belum diset: ${r.unconfigured.join(', ')}` : ''}. Berlaku setelah Claude Code dimulai ulang.`, 'ok');
+        await openPluginConfig(id);
+      } catch (err) {
+        toast(err.message, 'warn');
+      }
+      return;
+    }
     if (e.target.id === 'hook-form') {
       e.preventDefault();
       const f = e.target.elements;

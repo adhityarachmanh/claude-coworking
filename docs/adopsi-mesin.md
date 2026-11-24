@@ -19,12 +19,12 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Skills | 🧩 Skills (`/skills`) | ✅ |
 | Output styles | 🎭 Output style (`/output-style`) | ✅ |
 | Subagents (`.claude/agents`) | 🤖 Subagent (menu/`/agents`) | ✅ |
-| Plugins | 🧩 Plugin di dialog **Ekstensi** (menu/`/plugin`): marketplace (pasang, aktif/nonaktif, **update**, hapus) dan **marketplace terdaftar** (tambah/update/hapus) | ✅ |
+| Plugins | 🧩 Plugin di dialog **Ekstensi** (menu/`/plugin`): marketplace (pasang, aktif/nonaktif, **update**, hapus), **ℹ Detail** (komponen + biaya token) dan **⚙ Opsi** (`userConfig`, nilai lewat stdin), serta **marketplace terdaftar** (tambah/update/hapus) | ✅ |
 | Hooks | 🪝 Hooks (menu/`/hooks`) — lihat, tambah, ubah, hapus | ✅ |
 | MCP servers | 🔌 MCP (`/mcp`): tambah lokal/remote, **header HTTP**, transport HTTP/SSE, status/reconnect/disable/login, **logout** (hapus kredensial OAuth) | ✅ |
 | Rewind/checkpoint & ringkas | ⏪ Rewind, 🧹 Ringkas | ✅ |
 | Tugas latar | ⧗ Tugas latar (`/tasks`), Monitor: shell dan subagent milik sesi app | ✅ |
-| Agent view / sesi latar Claude (`claude agents --json`, stop/rm/respawn/logs) | ⋯ → **🖥 Sesi latar Claude**: daftar lintas project (`--json --all`), state/status/waitingFor, stop, respawn, rm, dan log. **Attach/balas tetap terminal** (TUI agent view) | ✅ (kecuali attach) |
+| Agent view / sesi latar Claude (`claude agents --json`, stop/rm/respawn/logs, `daemon status`) | ⋯ → **🖥 Sesi latar Claude**: daftar lintas project (`--json --all`), state/status/waitingFor, stop, respawn, rm, log, dan status daemon. **Attach/balas tetap terminal** (TUI agent view) | ✅ (kecuali attach) |
 | Worktree (`claude -w`) | ⎇ Worktree (menu) | ✅ |
 | PR (`gh`) | 🧩 Pull request | ✅ |
 | `/goal`, `/loop`, `/fewer-permission-prompts` | diteruskan sebagai command (katalog `/goal`, `/loop`, `/fewer-permission-prompts`) | ✅ |

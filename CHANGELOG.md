@@ -4,6 +4,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🧩 Detail & opsi plugin.** Di dialog Ekstensi, setiap plugin terpasang punya **ℹ Detail** (inventaris komponen + perkiraan biaya token dari `claude plugin details`) dan, bila punya `userConfig`, **⚙ Opsi** untuk melihat/mengisi opsinya (`claude plugin configure`). Nilai sensitif tidak pernah ditampilkan; nilai dikirim lewat stdin, bukan argumen.
+- **🖥 Status daemon sesi latar.** Panel Sesi latar Claude kini menampilkan status daemon (`claude daemon status`) di atas daftar.
 - **🖥 Sesi latar Claude.** Menu ⋯ → **Sesi latar Claude** menampilkan sesi daemon Claude Code (`claude agents --json`, lintas project): state, folder, waktu mulai, alasan menunggu. Dari laptop: **Hentikan** (`claude stop`), **Mulai ulang** (`claude respawn`), **Hapus** (`claude rm`), dan **Log** (`claude logs`). Lampirkan/membalas tetap lewat terminal karena agent view adalah TUI.
 - **🚪 Logout MCP.** Setiap server MCP yang punya kredensial login kini bisa **🚪 Logout** (`claude mcp logout` / `opencode mcp logout`) tanpa membuang konfigurasinya; login ulang lewat 🔑 Login.
 - **🧩 Plugin: update + marketplace.** Di dialog Ekstensi, plugin terpasang bisa **⬆ Update**, dan **marketplace terdaftar** bisa ditambah (URL/path/owner-repo), di-update (satu atau semua), atau dihapus — sebelumnya hanya plugin-nya yang bisa dikelola, bukan sumber marketplace-nya.

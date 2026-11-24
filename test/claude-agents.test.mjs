@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { backgroundAgentAction, backgroundAgentLogs, listBackgroundAgents } from '../src/claude-admin.js';
+import { backgroundAgentAction, backgroundAgentLogs, daemonStatus, listBackgroundAgents } from '../src/claude-admin.js';
 
 const FAKE = path.join(process.cwd(), 'test-support', 'fake-claude.mjs');
 const bin = { command: process.execPath, args: [FAKE] };
@@ -69,5 +69,22 @@ test('backgroundAgentLogs: teks log dari CLI, referensi aneh ditolak', async () 
     await assert.rejects(backgroundAgentLogs(bin, '--evil'), (e) => e.status === 400);
   } finally {
     box.done();
+  }
+});
+
+test('daemonStatus: teks dan running mengikuti CLI (exit 1 saat berhenti)', async () => {
+  const box = sandbox();
+  try {
+    delete process.env.FAKE_DAEMON_RUNNING;
+    const stopped = await daemonStatus(bin);
+    assert.equal(stopped.running, false);
+    assert.match(stopped.text, /not running/);
+    process.env.FAKE_DAEMON_RUNNING = '1';
+    const up = await daemonStatus(bin);
+    assert.equal(up.running, true);
+    assert.match(up.text, /pid: 4321/);
+  } finally {
+    box.done();
+    delete process.env.FAKE_DAEMON_RUNNING;
   }
 });

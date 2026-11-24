@@ -2032,6 +2032,24 @@ test('🧩 Ekstensi: plugins (install with a shown marketplace command, enable/d
   assert.equal((await api('/api/claude/plugins/marketplace-action', { action: 'remove', name: '../x' })).status, 400);
   assert.equal((await api('/api/claude/plugins/marketplace-action', { action: 'update' })).status, 200, 'update every marketplace');
   assert.equal((await api('/api/claude/plugins/marketplace-action', { action: 'explode' })).status, 400);
+  // ℹ details (text) and ⚙ configure (options via JSON, values via stdin).
+  const details = await api('/api/claude/plugins/details', { id: 'reviewer@official' });
+  assert.equal(details.status, 200, JSON.stringify(details.body));
+  assert.match(details.body.text, /Component inventory/);
+  const options = await api('/api/claude/plugins/configure', { id: 'reviewer@official' });
+  assert.equal(options.status, 200, JSON.stringify(options.body));
+  assert.equal(options.body.inputs.api_url, 'https://lama.example');
+  assert.deepEqual(options.body.unconfigured, ['mode']);
+  assert.equal(options.body.choices.mode.includes('ringkas'), true);
+  const savedOptions = await api('/api/claude/plugins/configure', { id: 'reviewer@official', values: { api_url: 'https://baru.example' } });
+  assert.equal(savedOptions.status, 200, JSON.stringify(savedOptions.body));
+  assert.deepEqual(savedOptions.body.saved, ['api_url']);
+  assert.equal((await api('/api/claude/plugins/configure', { id: 'reviewer@official', values: { 'bad key': 'x' } })).status, 400);
+  assert.equal((await api('/api/claude/plugins/configure', { id: 'reviewer@official', values: { api_url: 'a\nb' } })).status, 400);
+  const daemon = await api('/api/claude/background-agents/daemon', {});
+  assert.equal(daemon.status, 200, JSON.stringify(daemon.body));
+  assert.equal(daemon.body.running, false, 'fake: daemon berhenti');
+  assert.match(daemon.body.text, /not running/);
 
   const id = await projectId();
   const project = (await snapshot()).projects.find((x) => x.id === id);

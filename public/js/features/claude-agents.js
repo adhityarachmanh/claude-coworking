@@ -70,9 +70,24 @@ async function showLog(id) {
   }
 }
 
+/** The supervisor's own state (`claude daemon status`), shown once on open/refresh rather than every poll. */
+async function loadDaemon() {
+  const line = $('#bg-agents-daemon');
+  if (!line) return;
+  try {
+    const d = await api('/api/claude/background-agents/daemon', {});
+    const first = String(d.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean).find((l) => /pid|not running/i.test(l)) ?? '';
+    line.textContent = d.running ? `Daemon Claude: berjalan${first ? ` · ${first}` : ''}` : 'Daemon Claude: berhenti — sesi latar tidak akan berjalan sampai dipakai lagi.';
+    line.title = String(d.text ?? '').slice(0, 800);
+  } catch (err) {
+    line.textContent = `Daemon Claude: status tidak terbaca (${err.message}).`;
+  }
+}
+
 export function openClaudeAgents() {
   openModal('bg-agents-modal');
   load();
+  loadDaemon();
   clearInterval(bg.timer);
   bg.timer = setInterval(() => {
     if ($('#bg-agents-modal')?.hidden) return clearInterval(bg.timer);
@@ -81,7 +96,10 @@ export function openClaudeAgents() {
 }
 
 export function initClaudeAgents() {
-  $('#bg-agents-refresh')?.addEventListener('click', () => load());
+  $('#bg-agents-refresh')?.addEventListener('click', () => {
+    load();
+    loadDaemon();
+  });
   $('#bg-agents-all')?.addEventListener('change', () => load());
   $('#bg-agents-list')?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-bg]');

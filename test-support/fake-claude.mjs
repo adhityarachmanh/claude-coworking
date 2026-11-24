@@ -55,6 +55,12 @@ if (args[0] === 'mcp' && args[1] === 'add-json') {
   });
   // No fall-through: the JSON on stdin is the input, so this process waits for it (top-level `return` is illegal here).
 }
+// `claude daemon status`: a stopped daemon exits 1 (the app shows the text and a warning either way).
+if (args[0] === 'daemon' && args[1] === 'status') {
+  const running = process.env.FAKE_DAEMON_RUNNING === '1';
+  console.log(running ? 'running\npid: 4321\nversion: 9.9.9\nuptime: 2h' : 'not running');
+  process.exit(running ? 0 : 1);
+}
 // `claude agents --json` (agent view) and its session commands: a fixed roster, argv logged for tests.
 if (args[0] === 'agents' && args.includes('--json')) {
   if (process.env.FAKE_AGENTS_LOG) appendFileSync(process.env.FAKE_AGENTS_LOG, `${JSON.stringify(args)}\n`);
@@ -89,19 +95,46 @@ if (args[0] === 'plugin') {
   } else if (args[1] === 'update') {
     console.log(JSON.stringify({ ok: true, message: `Updated ${id}` }));
   } else if (args[1] === 'list') {
-    const mine = installed.map((p) => ({ id: p.id, version: '1.0.0', scope: 'user', enabled: p.enabled }));
+    const mine = installed.map((p) => ({ id: p.id, version: '1.0.0', scope: 'user', enabled: p.enabled, hasUserConfig: p.hasUserConfig === true }));
     const catalog = [
       { pluginId: 'reviewer@official', name: 'reviewer', description: 'Review kode otomatis' },
       { pluginId: 'risky@community', name: 'risky', description: 'Butuh perintah marketplace' },
     ];
     console.log(JSON.stringify(args.includes('--available') ? { installed: mine, available: catalog } : mine));
+  } else if (args[1] === 'details') {
+    console.log(`Plugin ${id}\n\nComponent inventory\n  skills: 1\n\nProjected token cost\n  always-on: 120 tokens`);
+  } else if (args[1] === 'configure' && args.includes('--values-stdin')) {
+    // Synchronous stdin (fd 0): the branch ends at the shared process.exit below, so no async 'end' listener.
+    let saved = [];
+    try {
+      saved = Object.keys(JSON.parse(readFileSync(0, 'utf8')));
+    } catch {}
+    console.log(JSON.stringify(args.includes('--json') ? { saved, unconfigured: [] } : { saved }));
+  } else if (args[1] === 'configure') {
+    console.log(
+      JSON.stringify({
+        schema: {
+          type: 'object',
+          required: ['api_url'],
+          properties: {
+            api_url: { type: 'string', title: 'API URL', description: 'Alamat API plugin' },
+            mode: { type: 'string', title: 'Mode', enum: ['ringkas', 'lengkap'] },
+            token: { type: 'string', title: 'Token', description: 'Rahasia' },
+          },
+        },
+        choices: { mode: ['ringkas', 'lengkap'] },
+        inputs: { api_url: 'https://lama.example' },
+        configured: ['api_url', 'token'],
+        unconfigured: ['mode'],
+      }),
+    );
   } else if (args[1] === 'install') {
     const accepted = args.includes('--accept-command');
     if (id === 'risky@community' && !accepted) {
       console.log(JSON.stringify({ ok: false, shownCommand: { command: 'npx risky-setup', sha256: 'a'.repeat(64) } }));
       process.exit(1);
     }
-    installed.push({ id, enabled: true });
+    installed.push({ id, enabled: true, hasUserConfig: id === 'reviewer@official' });
     save();
     console.log(JSON.stringify({ ok: true, message: `Installed ${id}` }));
   } else if (args[1] === 'uninstall') {
