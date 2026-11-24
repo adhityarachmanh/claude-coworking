@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.9.0
 
 - **🎛 Satu tombol Mode.** Tombol 🧠 Mode Otak dan 💻 Terminal diganti satu tombol **🎛 Mode** yang membuka dialog berisi empat pilihan tampilan: 🏢 Kantor, 🧠 Otak, 💻 Terminal, 🛰 Mission Control. Pilihan tetap diingat per browser.
 - **🛰 Mission Control.** Tampilan keempat: misi sejak prompt terakhir sebagai dasbor ala NASA — stasiun per role (GO / HOLD / ✖ / selesai / STBY) dengan grafik aktivitas, telemetri (konteks, biaya, langkah), radar tim dengan Lead di pusat, log CAPCOM siapa memberi tugas ke siapa, status CI, dan timeline siapa bekerja kapan. Semua dari data asli project, tanpa token tambahan.
