@@ -51,6 +51,7 @@ export const LOCAL_COMMANDS = [
   { name: 'goal', argumentHint: '<syarat|clear>', forward: true, description: '🎯 Tetapkan tujuan: Claude terus bekerja sampai syarat tercapai' },
   { name: 'loop', aliases: ['proactive'], argumentHint: '[interval] [prompt]', forward: true, description: '🔁 Ulangi prompt terjadwal selama sesi terbuka' },
   { name: 'fewer-permission-prompts', forward: true, description: '🔓 Kurangi prompt izin dengan allowlist yang Claude susun' },
+  { name: 'code-review', argumentHint: '[base|#PR|path]', forward: true, description: '🔍 Review kode: diff sekarang atau PR (lokal). `ultra` menjalankan review cloud berbayar, jadi pakai dari terminal' },
   { name: 'memory', description: '🧠 Edit instruksi memory: CLAUDE.md (Claude Code) / AGENTS.md (OpenCode)' },
   { name: 'dashboard', aliases: ['semua'], description: '🗂 Semua project: status setiap project sekaligus (izin, bekerja, antrian, idle)' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },

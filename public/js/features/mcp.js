@@ -61,6 +61,7 @@ function renderMcp() {
       const live = !isOpenCode() || s.status !== 'configured';
       let actions = !live ? [] : [
         s.status === 'needs-auth' ? '<button class="primary" data-mcp="login">🔑 Login</button>' : '',
+        s.status === 'connected' || s.status === 'needs-auth' ? '<button data-mcp="logout" title="Hapus kredensial login OAuth server ini (server tetap terdaftar)">🚪 Logout</button>' : '',
         s.status !== 'disabled' ? '<button data-mcp="reconnect">↻ Sambungkan ulang</button>' : '',
         s.status === 'disabled' ? '<button data-mcp="enable">▶ Aktifkan</button>' : '<button data-mcp="disable">⏸ Nonaktifkan</button>',
       ].join('');
@@ -205,13 +206,14 @@ export function initMcp() {
     const server = btn.closest('[data-server]').dataset.server;
     const action = btn.dataset.mcp;
     if (action === 'advanced') return openAdvanced(server);
+    if (action === 'logout' && !window.confirm(`Hapus kredensial login ${server}? Server tetap terdaftar; login ulang lewat 🔑 Login.`)) return;
     // Opened inside the click, or the browser blocks the pop-up; it gets its address once Claude Code answers.
     const tab = action === 'login' ? window.open('', '_blank') : null;
     btn.disabled = true;
     try {
       const r = await api(`/api/projects/${mcpView.project}/mcp-action`, { server, action });
       if (action !== 'login') {
-        toast({ reconnect: `${server} disambungkan ulang.`, enable: `${server} diaktifkan.`, disable: `${server} dinonaktifkan.` }[action], 'ok');
+        toast({ reconnect: `${server} disambungkan ulang.`, enable: `${server} diaktifkan.`, disable: `${server} dinonaktifkan.`, logout: `${server}: kredensial login dihapus.` }[action], 'ok');
         return loadMcp();
       }
       if (!r.authUrl) {

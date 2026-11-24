@@ -1,8 +1,8 @@
 # Matriks Adopsi Mesin (Claude Code & OpenCode)
 
-Tujuan Adhitron: mengoperasikan Claude Code dan OpenCode dari aplikasi tanpa CLI. Dokumen ini memetakan **setiap kemampuan** kedua mesin ke tempatnya di Adhitron, atau menandainya **di luar cakupan** dengan alasan. Versi terpasang saat ditulis: **Claude Code 2.1.328**, **OpenCode 2.3.2**.
+Tujuan Adhitron: mengoperasikan Claude Code dan OpenCode dari aplikasi tanpa CLI. Dokumen ini memetakan **setiap kemampuan** kedua mesin ke tempatnya di Adhitron, atau menandainya **di luar cakupan** dengan alasan. Versi terpasang saat ditulis: **Claude Code 2.1.331**, **OpenCode 2.4.1**.
 
-Sumber otoritatif: https://code.claude.com/docs (cli-reference, commands, hooks, settings, permissions, skills, output-styles, plugins, sub-agents, mcp, agent-view, worktrees, goal, scheduled-tasks) dan https://opencode.ai/docs (config, commands, policies, permissions, skills, plugins, providers, websearch, mcp-servers, cli). Ditinjau ulang 2026-11-23.
+Sumber otoritatif: https://code.claude.com/docs (cli-reference, commands, hooks, settings, permissions, skills, output-styles, plugins, sub-agents, mcp, agent-view, worktrees, goal, scheduled-tasks, ultrareview) dan https://opencode.ai/docs (config, commands, policies, permissions, skills, plugins, providers, websearch, mcp-servers, cli). Ditinjau ulang 2026-11-24.
 
 Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (disebut alasannya).
 
@@ -19,14 +19,17 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Skills | 🧩 Skills (`/skills`) | ✅ |
 | Output styles | 🎭 Output style (`/output-style`) | ✅ |
 | Subagents (`.claude/agents`) | 🤖 Subagent (menu/`/agents`) | ✅ |
-| Plugins | 🧩 Plugin di dialog **Ekstensi** (menu/`/plugin`): marketplace, aktif/nonaktif, hapus | ✅ |
+| Plugins | 🧩 Plugin di dialog **Ekstensi** (menu/`/plugin`): marketplace (pasang, aktif/nonaktif, **update**, hapus) dan **marketplace terdaftar** (tambah/update/hapus) | ✅ |
 | Hooks | 🪝 Hooks (menu/`/hooks`) — lihat, tambah, ubah, hapus | ✅ |
-| MCP servers | 🔌 MCP (`/mcp`): tambah lokal/remote, **header HTTP**, transport HTTP/SSE, status/reconnect/disable/login | ✅ |
+| MCP servers | 🔌 MCP (`/mcp`): tambah lokal/remote, **header HTTP**, transport HTTP/SSE, status/reconnect/disable/login, **logout** (hapus kredensial OAuth) | ✅ |
 | Rewind/checkpoint & ringkas | ⏪ Rewind, 🧹 Ringkas | ✅ |
-| Tugas latar & agent view | ⧗ Tugas latar (`/tasks`), Monitor | ✅ |
+| Tugas latar | ⧗ Tugas latar (`/tasks`), Monitor: shell dan subagent milik sesi app | ✅ |
+| Agent view / sesi latar Claude (`claude agents --json`, `--bg`, attach/logs/stop/rm/respawn`) | belum: daemon supervisor sendiri, `attach` butuh TTY; sesi latar app sudah punya papan ⧗. Kandidat berikutnya: daftar `--json` + stop/rm/hapus | 🔜 |
 | Worktree (`claude -w`) | ⎇ Worktree (menu) | ✅ |
 | PR (`gh`) | 🧩 Pull request | ✅ |
 | `/goal`, `/loop`, `/fewer-permission-prompts` | diteruskan sebagai command (katalog `/goal`, `/loop`, `/fewer-permission-prompts`) | ✅ |
+| `/code-review` (lokal, base/PR/path) | diteruskan sebagai command (katalog `/code-review`); hasil review muncul di chat | ✅ |
+| `claude ultrareview` / `/code-review ultra` | 🚫 review **cloud berbayar**: butuh login claude.ai, mengunggah repo ke sandbox Anthropic, 3 run gratis lalu $5–25 per review, 5–15 menit, dan `-p` keluar sebelum temuan datang (docs: pakai subcommand). Bukan operasi lokal; tetap lewat terminal bila diperlukan | 🚫 |
 | `/btw`, `/recap`, `/insights` | diteruskan sebagai command (katalog); hasilnya muncul di chat, tanpa panel khusus | ✅ |
 | Flag `--fallback-model`, `--max-turns`, `--max-budget-usd`, `--tools`, `--allowedTools`, `--disallowedTools`, `--setting-sources` | ⚙️ Flag Claude (menu) → setelan project → spawn | ✅ |
 | `--advisor` (model penasihat) | ⚙️ Flag Claude → **Model advisor** → `--advisor` | ✅ |
@@ -67,7 +70,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Providers (login, kustom, headers/body) | 👤 Akun → provider, 🔌 header/body; akun tersimpan bisa diganti (credential.activate) | ✅ |
 | Varian model `#variant` | pemilih model | ✅ |
 | Plugins | 🧩 Plugin OpenCode di dialog **Ekstensi** yang sama (tab Plugin menggantikan marketplace saat project OpenCode): npm/Git, tambah/hapus/update | ✅ |
-| MCP servers | 🔌 MCP; status/reconnect/disable/login; **⚙ Lanjutan** per server (`disabled`, `codemode`, `pool`, `protocol`, `cwd`, `timeout`) ditulis ke config dengan backup; header HTTP saat menambah | ✅ |
+| MCP servers | 🔌 MCP; status/reconnect/disable/login/**logout**; **⚙ Lanjutan** per server (`disabled`, `codemode`, `pool`, `protocol`, `cwd`, `timeout`) ditulis ke config dengan backup; header HTTP saat menambah | ✅ |
 | Worktree | ⎇ Worktree (aplikasi) | ✅ |
 | Automations (2.4) | ⏰ Automation OpenCode: prompt/Code Mode, interval/cron/sekali/event MCP (server dari daftar MCP project), jeda/lanjut/hapus | ✅ |
 | `opencode uninstall/share/run/service get-set-unset/debug heap-dump/mini/serve/acp/api/pair/ci` | internal/khusus terminal/berisiko | 🚫 |

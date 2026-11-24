@@ -2022,6 +2022,16 @@ test('🧩 Ekstensi: plugins (install with a shown marketplace command, enable/d
   assert.deepEqual(p.installed.map((x) => [x.id, x.enabled]), [['reviewer@official', false], ['risky@community', true]]);
   await api('/api/claude/plugins/action', { action: 'uninstall', id: 'risky@community' });
   assert.equal((await api('/api/claude/plugins/action', { action: 'install', id: 'x; rm -rf /' })).status, 400);
+  // ⬆ update + 🏪 marketplaces (list/add/update/remove) are part of the same dialog now.
+  assert.equal((await api('/api/claude/plugins/action', { action: 'update', id: 'reviewer@official' })).body.ok, true);
+  assert.deepEqual((await api('/api/claude/plugins/marketplaces')).body.marketplaces, [{ name: 'official', source: 'github', repo: 'anthropics/plugins' }]);
+  const added = await api('/api/claude/plugins/marketplace-action', { action: 'add', source: 'acme/tools' });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  assert.equal(added.body.marketplaces.length, 1, 'the fresh list comes back');
+  assert.equal((await api('/api/claude/plugins/marketplace-action', { action: 'add', source: '--evil' })).status, 400, 'a source never reads as an option');
+  assert.equal((await api('/api/claude/plugins/marketplace-action', { action: 'remove', name: '../x' })).status, 400);
+  assert.equal((await api('/api/claude/plugins/marketplace-action', { action: 'update' })).status, 200, 'update every marketplace');
+  assert.equal((await api('/api/claude/plugins/marketplace-action', { action: 'explode' })).status, 400);
 
   const id = await projectId();
   const project = (await snapshot()).projects.find((x) => x.id === id);

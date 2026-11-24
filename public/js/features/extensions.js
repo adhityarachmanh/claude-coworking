@@ -8,7 +8,7 @@ import { openModal } from '../ui/modals.js';
 import { guardCap } from './engine.js';
 import { loadOpenCodePlugins } from './opencode-check.js';
 
-const ext = { tab: 'plugins', project: null, plugins: null, filter: '', agents: [], editing: null, hooks: [], hookEvents: [], hookEditing: null };
+const ext = { tab: 'plugins', project: null, plugins: null, marketplaces: null, filter: '', agents: [], editing: null, hooks: [], hookEvents: [], hookEditing: null };
 const MAX_LIST = 60;
 
 export function openExtensions(tab = 'plugins') {
@@ -36,6 +36,7 @@ async function load(force = false) {
         $('#ext-body').innerHTML = '<p class="muted">Memuat daftar plugin… (marketplace bisa ribuan)</p>';
         ext.plugins = await api('/api/claude/plugins', { force });
       }
+      ext.marketplaces = (await api('/api/claude/plugins/marketplaces')).marketplaces ?? [];
     } else if (!ext.project) {
       ext.agents = [];
       ext.hooks = [];
@@ -86,21 +87,46 @@ function pluginsHtml() {
   const installed = p.installed.length
     ? `<ul class="ext-list">${p.installed
         .map((x) => `<li data-id="${escapeHtml(x.id)}"><div><b>${escapeHtml(x.id)}</b> <small class="muted">v${escapeHtml(x.version)} · ${escapeHtml(x.scope)}</small></div><div class="ext-actions">${
-          local ? `<button class="ghost" data-plugin="${x.enabled ? 'disable' : 'enable'}">${x.enabled ? '⏸ Nonaktifkan' : '▶ Aktifkan'}</button><button class="ghost danger-text" data-plugin="uninstall">Hapus</button>` : `<small class="muted">${x.enabled ? 'aktif' : 'nonaktif'}</small>`
+          local ? `<button class="ghost" data-plugin="update" title="Perbarui ke versi terbaru dari marketplace">⬆ Update</button><button class="ghost" data-plugin="${x.enabled ? 'disable' : 'enable'}">${x.enabled ? '⏸ Nonaktifkan' : '▶ Aktifkan'}</button><button class="ghost danger-text" data-plugin="uninstall">Hapus</button>` : `<small class="muted">${x.enabled ? 'aktif' : 'nonaktif'}</small>`
         }</div></li>`)
         .join('')}</ul>`
     : '<p class="muted small">Belum ada plugin terpasang.</p>';
   const q = ext.filter.toLowerCase();
   const matches = q ? p.available.filter((x) => x.id.toLowerCase().includes(q) || x.description.toLowerCase().includes(q)) : p.available;
   const list = matches.slice(0, MAX_LIST);
+  const marketplaces = (ext.marketplaces ?? [])
+    .map((m) => `<li data-mp="${escapeHtml(m.name)}"><div><b>${escapeHtml(m.name)}</b> <small class="muted">${escapeHtml(m.repo || m.source || '')}</small></div><div class="ext-actions">${local ? `<button class="ghost" data-mp-update="${escapeHtml(m.name)}">↻ Update</button><button class="ghost danger-text" data-mp-remove="${escapeHtml(m.name)}">Hapus</button>` : ''}</div></li>`)
+    .join('');
   return `<h3 class="ext-h">Terpasang</h3>${installed}
-    <h3 class="ext-h">Marketplace <small class="muted">${p.available.length} plugin</small></h3>
+    <h3 class="ext-h">Marketplace terdaftar <small class="muted">${ext.marketplaces?.length ?? 0}</small></h3>
+    ${marketplaces ? `<ul class="ext-list">${marketplaces}</ul>` : '<p class="muted small">Memuat marketplace…</p>'}
+    ${local ? `<div class="acct-actions ext-mp-add"><input id="ext-mp-source" maxlength="500" placeholder="owner/repo atau https://…/marketplace.json" aria-label="Sumber marketplace baru" autocomplete="off" spellcheck="false" /><button type="button" class="ghost" data-mp-add>＋ Tambah marketplace</button></div>` : ''}
+    <h3 class="ext-h">Katalog plugin <small class="muted">${p.available.length} plugin</small></h3>
     <input id="ext-filter" type="search" value="${escapeHtml(ext.filter)}" placeholder="Cari plugin: github, sentry, test, review…" aria-label="Cari plugin" autocomplete="off" />
     <ul class="ext-list">${list
       .map((x) => `<li data-id="${escapeHtml(x.id)}"><div><b>${escapeHtml(x.name)}</b> <small class="muted">${escapeHtml(x.id.split('@')[1] ?? '')}</small><p class="muted small">${escapeHtml(x.description)}</p></div><div class="ext-actions">${local ? '<button class="primary" data-plugin="install">Pasang</button>' : ''}</div></li>`)
       .join('')}</ul>
     ${matches.length > MAX_LIST ? `<p class="muted small">${matches.length - MAX_LIST} lainnya: persempit pencarian.</p>` : ''}
     ${local ? '' : '<p class="muted small">Memasang/menghapus plugin hanya dari laptop (plugin menjalankan kode di laptop).</p>'}`;
+}
+
+/** 🏪 add / remove / update one marketplace; the returned list replaces the rendered one. */
+async function marketplaceAct(action, { source = '', name = '' } = {}) {
+  if (action === 'remove' && !window.confirm(`Hapus marketplace ${name}? Plugin yang sudah terpasang tetap ada.`)) return;
+  if (action === 'add') {
+    source = $('#ext-mp-source')?.value.trim() ?? source;
+    if (!source) return toast('Isi URL atau owner/repo marketplace dulu.', 'warn');
+    if (!window.confirm(`Tambah marketplace ${source}?\n\nMarketplace menentukan plugin yang bisa dipasang; pasang hanya dari sumber yang kamu percaya.`)) return;
+  }
+  try {
+    const r = await api('/api/claude/plugins/marketplace-action', { action, source, name });
+    ext.marketplaces = r.marketplaces ?? [];
+    ext.plugins = null; // the catalog may have changed
+    toast(`Marketplace ${action === 'add' ? 'ditambahkan' : action === 'remove' ? 'dihapus' : 'diperbarui'}.`, 'ok');
+    load(true);
+  } catch (err) {
+    toast(err.message, 'warn');
+  }
 }
 
 async function pluginAct(btn) {
@@ -119,7 +145,7 @@ async function pluginAct(btn) {
       if (!window.confirm(`Marketplace plugin ini meminta menjalankan perintah berikut di laptop:\n\n${r.command}\n\nJalankan?`)) return;
       r = await api('/api/claude/plugins/action', { action, id, scope, acceptCommand: r.sha256 });
     }
-    toast({ install: `Plugin ${id} terpasang.`, uninstall: `Plugin ${id} dihapus.`, enable: `Plugin ${id} diaktifkan.`, disable: `Plugin ${id} dinonaktifkan.` }[action], 'ok');
+    toast({ install: `Plugin ${id} terpasang.`, uninstall: `Plugin ${id} dihapus.`, enable: `Plugin ${id} diaktifkan.`, disable: `Plugin ${id} dinonaktifkan.`, update: `Plugin ${id} diperbarui.` }[action], 'ok');
     ext.plugins = null;
     load(true);
   } catch (err) {
@@ -236,6 +262,11 @@ export function initExtensions() {
   });
   $('#ext-body').addEventListener('click', async (e) => {
     const t = e.target;
+    if (t.closest('[data-mp-add]')) return marketplaceAct('add');
+    const mpUpdate = t.closest('[data-mp-update]');
+    if (mpUpdate) return marketplaceAct('update', { name: mpUpdate.dataset.mpUpdate });
+    const mpRemove = t.closest('[data-mp-remove]');
+    if (mpRemove) return marketplaceAct('remove', { name: mpRemove.dataset.mpRemove });
     if (t.closest('[data-plugin]')) return pluginAct(t.closest('[data-plugin]'));
     if (t.closest('[data-agent-new]')) return (ext.editing = { scope: 'project' }), render();
     if (t.closest('[data-agent-cancel]')) return (ext.editing = null), render();

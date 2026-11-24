@@ -126,6 +126,22 @@ export function mcpServerJson(r) {
 }
 
 /**
+ * 🚪 Clears the OAuth credentials stored for one MCP server (`claude mcp logout` / `opencode mcp logout`).
+ * Both engines use the same argument shape; the name is validated because it becomes an argv entry.
+ */
+export async function mcpLogout({ engine, bin, projectPath, name }) {
+  if (!bin) throw new McpAdminError(404, 'CLI di komputer ini tidak ditemukan.');
+  if (!NAME.test(String(name ?? ''))) throw new McpAdminError(400, 'Nama server tidak valid.');
+  return new Promise((resolve, reject) => {
+    execFileTree(bin.command, [...bin.args, 'mcp', 'logout', name], { cwd: projectPath, encoding: 'utf8', timeout: 30_000, windowsHide: true, env: childEnv({ CI: '1', NO_COLOR: '1' }) }, (err, out, errOut) => {
+      const text = `${out ?? ''}\n${errOut ?? ''}`.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
+      if (err) return reject(new McpAdminError(502, text.split('\n').find((l) => l.trim() && !/^\s+at /.test(l))?.slice(0, 300) || 'Logout server MCP gagal.'));
+      resolve({ ok: true, output: text.slice(0, 2000) });
+    });
+  });
+}
+
+/**
  * OpenCode's configured MCP servers (the global opencode config folder and the project's opencode.json /
  * .opencode/), as the /mcp dialog lists them: status "configured" (connected or not is only known inside
  * OpenCode). The global folder honours OFFICE_OPENCODE_CONFIG_HOME/XDG_CONFIG_HOME (openCodeConfigRoot), so a

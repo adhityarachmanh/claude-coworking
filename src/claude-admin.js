@@ -75,11 +75,11 @@ export async function listPlugins(bin, { force = false } = {}) {
 }
 
 /**
- * install | uninstall | enable | disable. An install whose marketplace declares a command to run is not accepted
- * blindly: the command comes back (needsConfirm) and only runs after the user saw it (acceptCommand = its sha256).
+ * install | uninstall | enable | disable | update. An install whose marketplace declares a command to run is not
+ * accepted blindly: the command comes back (needsConfirm) and only runs after the user saw it (acceptCommand = its sha256).
  */
 export async function pluginAction(bin, { action, id, scope = 'user', acceptCommand = null, cwd }) {
-  if (!['install', 'uninstall', 'enable', 'disable'].includes(action)) throw new AdminError(400, 'Aksi plugin tidak dikenal.');
+  if (!['install', 'uninstall', 'enable', 'disable', 'update'].includes(action)) throw new AdminError(400, 'Aksi plugin tidak dikenal.');
   if (!PLUGIN_ID.test(String(id ?? ''))) throw new AdminError(400, 'Id plugin tidak valid.');
   const args = ['plugin', action, id, '--json'];
   if (action === 'install') {
@@ -101,6 +101,57 @@ export async function pluginAction(bin, { action, id, scope = 'user', acceptComm
   if (!r.ok && shown?.sha256) return { ok: false, needsConfirm: true, command: String(shown.command ?? shown.display ?? '').slice(0, 2000), sha256: shown.sha256 };
   if (!r.ok) throw new AdminError(502, result?.error ?? result?.message ?? firstLine(r));
   return { ok: true, message: result?.message ?? firstLine({ out: r.out, err: '' }) };
+}
+
+// ---------- marketplaces (`claude plugin marketplace …`) ----------
+
+const MP_NAME = /^[\w.-]{1,200}$/;
+const MP_SOURCE = /^[^\s\x00-\x1f]{1,500}$/; // a URL, a path or owner/repo; never an option
+
+/** 🏪 Configured marketplaces, as `claude plugin marketplace list --json` reports them. */
+export async function listMarketplaces(bin) {
+  const r = await runClaude(bin, ['plugin', 'marketplace', 'list', '--json'], { timeout: 60_000 });
+  if (!r.ok) throw new AdminError(502, firstLine(r));
+  let parsed;
+  try {
+    parsed = JSON.parse(r.out.trim());
+  } catch {
+    throw new AdminError(502, 'Daftar marketplace tidak terbaca.');
+  }
+  return (Array.isArray(parsed) ? parsed : []).slice(0, 100).map((m) => ({
+    name: String(m.name ?? '').slice(0, 200),
+    source: String(m.source ?? '').slice(0, 60),
+    repo: String(m.repo ?? '').slice(0, 300),
+  }));
+}
+
+/** add (a URL/path/owner-repo) | remove (a configured name) | update (one name, or every marketplace). */
+export async function marketplaceAction(bin, { action, source = '', name = '' }) {
+  if (!['add', 'remove', 'update'].includes(action)) throw new AdminError(400, 'Aksi marketplace tidak dikenal.');
+  const args = ['plugin', 'marketplace', action];
+  if (action === 'add') {
+    const src = String(source ?? '').trim();
+    if (!MP_SOURCE.test(src) || src.startsWith('-')) throw new AdminError(400, 'Sumber marketplace tidak valid.');
+    args.push(src);
+  } else if (action === 'remove') {
+    if (!MP_NAME.test(String(name ?? ''))) throw new AdminError(400, 'Nama marketplace tidak valid.');
+    args.push(String(name));
+  } else if (name) {
+    if (!MP_NAME.test(String(name ?? ''))) throw new AdminError(400, 'Nama marketplace tidak valid.');
+    args.push(String(name));
+  }
+  // `marketplace update` without a name prints no JSON line, so --json is only added when a name is given.
+  if (action !== 'update' || name) args.push('--json');
+  const r = await runClaude(bin, args, { timeout: 300_000 });
+  pluginCache = null;
+  let result = null;
+  try {
+    result = JSON.parse(r.out.trim().split('\n').at(-1));
+  } catch {
+    // older CLI or update-all: plain text
+  }
+  if (!r.ok) throw new AdminError(502, result?.error ?? result?.message ?? firstLine(r));
+  return { ok: true, message: result?.message ?? firstLine({ out: r.out, err: '' }), marketplaces: await listMarketplaces(bin) };
 }
 
 // ---------- your own subagents (.claude/agents/*.md) ----------

@@ -34,6 +34,12 @@ if (args[0] === 'mcp' && args[1] === 'add') {
   console.log(`Added MCP server ${args.find((a, i) => i > 1 && !a.startsWith('-') && args[i - 1] !== '-s' && args[i - 1] !== '-e' && args[i - 1] !== '--transport')}`);
   process.exit(0);
 }
+// `claude mcp logout <name>`: same log file, so a test can check the argv (no prompt is ever started).
+if (args[0] === 'mcp' && args[1] === 'logout') {
+  if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, `${JSON.stringify(['claude', ...args.slice(1)])}\n`);
+  console.log(`Logged out MCP server ${args[2]}`);
+  process.exit(0);
+}
 // `claude mcp add-json <name> -` (2.1.327+): the server JSON arrives on STDIN so a token never lands in argv.
 // Recorded WITHOUT the JSON's contents in the argv log on purpose — a test asserts that no secret is there.
 if (args[0] === 'mcp' && args[1] === 'add-json') {
@@ -51,6 +57,7 @@ if (args[0] === 'mcp' && args[1] === 'add-json') {
 }
 // `claude plugin …` (🧩 Ekstensi): a tiny marketplace; installs are kept in FAKE_PLUGIN_STATE (JSON list of ids)
 if (args[0] === 'plugin') {
+  if (process.env.FAKE_PLUGIN_LOG) appendFileSync(process.env.FAKE_PLUGIN_LOG, `${JSON.stringify(args.slice(1))}\n`);
   const file = process.env.FAKE_PLUGIN_STATE;
   let installed = [];
   try {
@@ -58,7 +65,13 @@ if (args[0] === 'plugin') {
   } catch {}
   const save = () => file && writeFileSync(file, JSON.stringify(installed));
   const id = args[2];
-  if (args[1] === 'list') {
+  if (args[1] === 'marketplace') {
+    // `list --json` prints an array; add/remove/update print one JSON result line. The app re-reads the list after.
+    if (args[2] === 'list') console.log(JSON.stringify([{ name: 'official', source: 'github', repo: 'anthropics/plugins' }]));
+    else console.log(JSON.stringify({ ok: true, message: `marketplace ${args[2]} ok` }));
+  } else if (args[1] === 'update') {
+    console.log(JSON.stringify({ ok: true, message: `Updated ${id}` }));
+  } else if (args[1] === 'list') {
     const mine = installed.map((p) => ({ id: p.id, version: '1.0.0', scope: 'user', enabled: p.enabled }));
     const catalog = [
       { pluginId: 'reviewer@official', name: 'reviewer', description: 'Review kode otomatis' },

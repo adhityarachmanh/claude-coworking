@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🚪 Logout MCP.** Setiap server MCP yang punya kredensial login kini bisa **🚪 Logout** (`claude mcp logout` / `opencode mcp logout`) tanpa membuang konfigurasinya; login ulang lewat 🔑 Login.
+- **🧩 Plugin: update + marketplace.** Di dialog Ekstensi, plugin terpasang bisa **⬆ Update**, dan **marketplace terdaftar** bisa ditambah (URL/path/owner-repo), di-update (satu atau semua), atau dihapus — sebelumnya hanya plugin-nya yang bisa dikelola, bukan sumber marketplace-nya.
+- **🔍 `/code-review`** masuk katalog perintah (diteruskan ke Claude): review lokal untuk diff/PR; `ultra` tetap review cloud berbayar dan tidak dijalankan dari app (lihat matriks adopsi).
+
 ## 1.10.0
 
 - **🎼 Mode Orkestra.** Pilihan kelima di dialog 🎛 Mode: Lead sebagai konduktor, PM sebagai concertmaster dengan partitur (papan task), setiap role memainkan instrumennya dan setiap langkah nyata menjadi not. Langkah gagal mewarnai pemain merah, izin yang menunggu menjadi fermata, dan partitur misi di bawah panggung mencatat siapa bekerja kapan. **Musik lembut opsional** (default mati, 🔇/🔉/🔊): selalu harmonis — hanya nada dari akor yang sedang berjalan, tepat di ketukan, dibatasi per ketukan; kegagalan menjadi suasana minor, bukan nada sumbang.

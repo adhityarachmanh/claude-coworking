@@ -3024,6 +3024,8 @@ body.read-only #composer-hint { color: var(--ask); }
 .pr-card { max-width: 640px; width: min(640px, 96vw); }
 .ext-body { max-height: 65vh; overflow: auto; }
 .ext-h { margin: 12px 0 6px; font-size: var(--fs-md); }
+.ext-mp-add { display: flex; gap: 6px; margin: 4px 0 10px; }
+.ext-mp-add input { flex: 1; min-width: 0; }
 .ext-list { list-style: none; margin: 0 0 8px; padding: 0; }
 .ext-list > li { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .ext-list p { margin: 2px 0 0; }

@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { addMcpServer, mcpServerJson } from '../src/mcp-admin.js';
+import { addMcpServer, mcpLogout, mcpServerJson } from '../src/mcp-admin.js';
 
 const FAKE = path.join(process.cwd(), 'test-support', 'fake-claude.mjs');
 const bin = { command: process.execPath, args: [FAKE] };
@@ -130,4 +130,15 @@ test('addMcpServer: header hanya untuk server remote', async () => {
     addMcpServer({ engine: 'opencode', bin, projectPath: process.cwd(), request: { name: 'x', kind: 'remote', url: 'https://x.example/mcp', headers: ['bukan-header'] } }),
     (err) => err.status === 400,
   );
+});
+test('mcpLogout: memanggil `mcp logout <nama>`, nama tetap divalidasi', async () => {
+  const box = sandbox();
+  try {
+    const result = await mcpLogout({ engine: 'claude', bin, projectPath: box.dir, name: 'sentry' });
+    assert.equal(result.ok, true);
+    assert.deepEqual(box.read().at(-1).slice(1), ['logout', 'sentry']);
+    await assert.rejects(mcpLogout({ engine: 'opencode', bin, projectPath: box.dir, name: '--evil' }), (err) => err.status === 400);
+  } finally {
+    box.done();
+  }
 });

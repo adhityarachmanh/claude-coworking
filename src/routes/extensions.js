@@ -3,7 +3,7 @@
 // subagent (~/.claude/agents: every project) and the GitHub login: laptop only (a plugin runs code on this laptop;
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
-import { AdminError, claudePurgePlan, claudePurgeProject, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listHooks, listPlugins, pluginAction, readAutoMode, saveAgent, saveAutoMode, saveHook } from '../claude-admin.js';
+import { AdminError, claudePurgePlan, claudePurgeProject, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, readAutoMode, saveAgent, saveAutoMode, saveHook } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { json } from './http.js';
@@ -46,6 +46,27 @@ export function register(router) {
         if (result.ok) {
           console.log(`Plugin ${body.action}: ${String(body.id).slice(0, 120)}`);
           sessions.accountChanged(); // idle Claude Code processes restart with the new plugin set; busy ones after their turn
+        }
+        return result;
+      },
+      { laptop: true, claude: true },
+    ),
+    { maxBody: 4096 },
+  );
+
+  // 🏪 Marketplaces: the list is a read; add/remove/update write configuration and clone from the network.
+  router.post(
+    '/api/claude/plugins/marketplaces',
+    guard(({ claude }) => listMarketplaces(claude).then((marketplaces) => ({ marketplaces })), { claude: true }),
+  );
+  router.post(
+    '/api/claude/plugins/marketplace-action',
+    guard(
+      async ({ claude, sessions }, req, res, params, body) => {
+        const result = await marketplaceAction(claude, { action: String(body.action ?? ''), source: String(body.source ?? ''), name: String(body.name ?? '') });
+        if (result.ok) {
+          console.log(`Marketplace plugin ${body.action}: ${String(body.source || body.name || 'semua').slice(0, 120)}`);
+          sessions.accountChanged(); // idle Claude Code processes restart with the new marketplace set
         }
         return result;
       },

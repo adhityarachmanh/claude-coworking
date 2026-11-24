@@ -24,11 +24,20 @@ export function register(router) {
     }
   }), { maxBody: 16 * 1024 });
   router.post('/api/projects/:id/mcp', withSession((ctx, req, res, { session }) => answer(res, session.mcpStatus().then((servers) => ({ servers })))));
-  router.post('/api/projects/:id/mcp-action', withSession(({ hub }, req, res, { project, session }, body) => {
+  router.post('/api/projects/:id/mcp-action', withSession(({ hub, claude, opencode }, req, res, { project, session }, body) => {
     const act = String(body.action ?? '');
     const callbackUrl = String(body.callbackUrl ?? '');
     // Claude Code wants the full redirect URL; OpenCode also takes the bare code some providers show
     if (act === 'callback' && !/^https?:\/\//.test(callbackUrl) && !(engineOf(hub, project.id) === 'opencode' && /^[\w.~-]{4,2048}$/.test(callbackUrl))) return json(res, 400, { error: 'Tempel URL lengkap dari address bar setelah login.' });
+    if (act === 'logout') {
+      return answer(res, (async () => {
+        const { mcpLogout } = await import('../mcp-admin.js');
+        const engine = engineOf(hub, project.id);
+        const result = await mcpLogout({ engine, bin: engine === 'opencode' ? opencode : claude, projectPath: project.path, name: String(body.server ?? '') });
+        session.reloadSettings?.(); // the next prompt starts without the old credentials
+        return result;
+      })());
+    }
     return answer(res, session.mcpAction(String(body.server ?? ''), act, callbackUrl));
   }));
   // /tasks, Ctrl+B
