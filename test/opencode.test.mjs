@@ -497,7 +497,11 @@ test('🔌 MCP without the terminal: OpenCode lists opencode.json servers; ＋ T
   assert.deepEqual(log().at(-1), ['opencode', '--global', 'sentry', '--url', 'https://mcp.sentry.dev/mcp']);
   await useEngine('claude');
   assert.equal((await api(`/api/projects/${id}/mcp-add`, { name: 'pw', kind: 'local', command: 'npx -y "@playwright/mcp@latest"', env: ['TOKEN=a b'] })).status, 200);
-  assert.deepEqual(log().at(-1), ['claude', '-s', 'local', '-e', 'TOKEN=a b', 'pw', '--', 'npx', '-y', '@playwright/mcp@latest']);
+  // With env/header, Claude Code's add-json path sends the server JSON on stdin so the value never lands in argv.
+  const entry = log().at(-1);
+  assert.deepEqual(entry.argv, ['pw', '-'], 'rahasia lewat stdin (add-json)');
+  assert.match(entry.stdin, /"TOKEN":"a b"/);
+  assert.ok(!JSON.stringify(entry.argv).includes('a b'), 'argv bebas rahasia');
   assert.equal((await api(`/api/projects/${id}/mcp-add`, { name: 'x; rm -rf', kind: 'local', command: 'a' })).status, 400, 'names are checked');
   assert.equal((await api(`/api/projects/${id}/mcp-add`, { name: 'y', kind: 'remote', url: 'file:///etc/passwd' })).status, 400, 'http(s) only');
   await useEngine('opencode');
@@ -860,9 +864,9 @@ test('OpenCode config editor: global/project read + save, JSON comments kept, ba
   });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.config.model, 'anthropic/claude-opus-4');
-  assert.deepEqual(r.body.agents, [{ name: 'reviewer', mode: 'subagent', model: 'openai/gpt-5', description: 'Review', prompt: 'Be strict' }]);
+  assert.deepEqual(r.body.agents, [{ name: 'reviewer', mode: 'subagent', model: 'openai/gpt-5', description: 'Review', prompt: 'Be strict', steps: '', color: '', hidden: false, disabled: false }]);
   assert.ok(r.body.backup === null, 'a new file has no backup');
-  assert.equal(JSON.parse(readFileSync(projectFile, 'utf8')).agent.reviewer.system, 'Be strict');
+  assert.equal(JSON.parse(readFileSync(projectFile, 'utf8')).agents.reviewer.system, 'Be strict');
 
   mkdirSync(path.dirname(globalFile), { recursive: true });
   writeFileSync(globalFile, '{\n  // komentar global\n  "model": "lama",\n}\n');

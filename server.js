@@ -1732,3 +1732,18 @@ async function shutdown() {
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+// A crash must leave a line in data/server.log: the packaged app has no visible stderr, and the Task Scheduler
+// brings the server back. A stray rejected promise is logged while the office keeps serving (never a silent death).
+process.on('uncaughtException', (err) => {
+  try {
+    console.error('FATAL uncaughtException:', err?.stack ?? err);
+    hub.save();
+    metrics.flush();
+  } catch {
+    // the log itself failed: still exit so a supervisor can restart us
+  }
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('unhandledRejection:', reason?.stack ?? reason);
+});

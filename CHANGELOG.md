@@ -4,6 +4,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🛡️ Stabilitas: crash tidak lagi senyap.** `uncaughtException` dicatat ke `data/server.log` (stack lengkap), state disimpan, lalu proses keluar agar penjaga Task Scheduler/auto-start menyalakannya lagi; `unhandledRejection` dicatat tanpa mematikan kantor. Test unit yang lama basi (bentuk MCP `add-json` dan agent V2) diperbarui supaya regresi benar-benar terdeteksi.
 - **🧹 Bersihkan dependensi plugin.** Dialog Ekstensi punya **Bersihkan dependensi** (`claude plugin prune`): pratinjau `--dry-run` ditampilkan dulu, lalu `-y` setelah kamu setuju; dependensi otomatis yang tidak dipakai plugin mana pun dihapus.
 - **🔑 Login SSO.** Dialog 👤 Akun kini punya tiga jalur login in-app: **Claude.ai** (langganan), **Console/API**, dan **SSO** (`claude auth login --sso`). Alur kode-tempel dan logout tetap sama.
 - **Debug port bentrok & Tailscale.** Saat server dijalankan ketika Adhitron lain masih memakai port yang sama (mis. debug dari VS Code dengan 4317), server kini menjelaskan penyebabnya — hentikan instance itu atau pakai `OFFICE_PORT` lain — bukan mati dengan stack `EADDRINUSE`. Dokumentasi debugging diperbarui: HTTP hanya `127.0.0.1`, listener LAN/Tailscale muncul saat akses HP hidup, HTTPS `:4318` butuh sertifikat, dan env `OFFICE_APP_DIR`/`OFFICE_MANAGED` yang diwarisi harus dihapus untuk debug dari repo.
