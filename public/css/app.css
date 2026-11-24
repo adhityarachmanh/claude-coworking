@@ -1581,6 +1581,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .audit-item.bad .audit-when { color: var(--err); }
 .audit-bad { color: var(--err); font-weight: 600; }
 .oc-plugins { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+#ext-oc-plugins { margin-top: 0; padding-top: 0; border-top: 0; max-height: 65vh; overflow: auto; }
 .oc-plugin-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .oc-plugin-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-md); }
 .oc-plugin-row:last-child { border-bottom: 0; }

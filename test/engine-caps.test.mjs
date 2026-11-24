@@ -16,10 +16,12 @@ const CONFIG = Object.freeze({
 test('Claude Code keeps the Claude-only surfaces', () => {
   assert.equal(CLAUDE_CAPS.permissions, true);
   assert.equal(CLAUDE_CAPS.extensions, true);
+  assert.equal(CLAUDE_CAPS.plugins, true, 'the plugin dialog works for Claude too');
   assert.equal(CLAUDE_CAPS.search, true);
   const caps = capsFor({}, 'claude');
   assert.equal(caps.permissions, true);
   assert.equal(caps.extensions, true);
+  assert.equal(caps.plugins, true);
   assert.equal(caps.search, true);
 });
 
@@ -27,6 +29,7 @@ test('OpenCode turns off Claude-only permissions/extensions, but keeps conversat
   const caps = capsFor(CONFIG, 'opencode');
   assert.equal(caps.permissions, false, 'Claude permission files are not OpenCode rules');
   assert.equal(caps.extensions, false, 'plugins/agents/hooks are Claude Code files');
+  assert.equal(caps.plugins, true, 'OpenCode plugins (npm/Git) are managed in the same dialog');
   assert.equal(caps.search, true, 'conversation search covers OpenCode sessions too');
   assert.equal(caps.exportSession, false, 'full session export reads Claude transcripts');
   assert.deepEqual(caps.modes, ['build', 'plan', 'autopilot'], 'OpenCode menawarkan Build, Plan, dan Auto');

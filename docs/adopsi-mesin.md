@@ -19,7 +19,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Skills | 🧩 Skills (`/skills`) | ✅ |
 | Output styles | 🎭 Output style (`/output-style`) | ✅ |
 | Subagents (`.claude/agents`) | 🤖 Subagent (menu/`/agents`) | ✅ |
-| Plugins | 🧩 Plugin (menu/`/plugin`) | ✅ |
+| Plugins | 🧩 Plugin di dialog **Ekstensi** (menu/`/plugin`): marketplace, aktif/nonaktif, hapus | ✅ |
 | Hooks | 🪝 Hooks (menu/`/hooks`) — lihat, tambah, ubah, hapus | ✅ |
 | MCP servers | 🔌 MCP (`/mcp`): tambah lokal/remote, **header HTTP**, transport HTTP/SSE, status/reconnect/disable/login | ✅ |
 | Rewind/checkpoint & ringkas | ⏪ Rewind, 🧹 Ringkas | ✅ |
@@ -66,7 +66,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Config lanjutan (compaction, warming, snapshots, watcher, formatter, media, tool_output, experimental) | ⚙️ Config lanjutan; `compaction.background` + penanda compaction di chat | ✅ |
 | Providers (login, kustom, headers/body) | 👤 Akun → provider, 🔌 header/body; akun tersimpan bisa diganti (credential.activate) | ✅ |
 | Varian model `#variant` | pemilih model | ✅ |
-| Plugins | 🧩 Plugin OpenCode | ✅ |
+| Plugins | 🧩 Plugin OpenCode di dialog **Ekstensi** yang sama (tab Plugin menggantikan marketplace saat project OpenCode): npm/Git, tambah/hapus/update | ✅ |
 | MCP servers | 🔌 MCP; status/reconnect/disable/login; **⚙ Lanjutan** per server (`disabled`, `codemode`, `pool`, `protocol`, `cwd`, `timeout`) ditulis ke config dengan backup; header HTTP saat menambah | ✅ |
 | Worktree | ⎇ Worktree (aplikasi) | ✅ |
 | Automations (2.4) | ⏰ Automation OpenCode: prompt/Code Mode, interval/cron/sekali/event MCP (server dari daftar MCP project), jeda/lanjut/hapus | ✅ |

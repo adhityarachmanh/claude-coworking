@@ -89,8 +89,10 @@ function renderPlugins() {
     .join('');
 }
 
-async function loadPlugins(force = false) {
-  if (!oc.view?.available || !mayAdmin() || state.readOnly) return;
+/** The plugin manager, shared by the Ekstensi dialog (both engines); exported for extensions.js. */
+export async function loadOpenCodePlugins(force = false) {
+  const available = oc.view ? oc.view.available : state.config?.engines?.opencode?.available !== false;
+  if (!available || !mayAdmin() || state.readOnly) return;
   if (oc.pluginsLoading || (!force && oc.plugins != null)) return;
   oc.pluginsLoading = true;
   renderPlugins();
@@ -126,7 +128,7 @@ async function pluginAction(kind, spec = '') {
     if (status) status.textContent = r.output || `${label} selesai.`;
     toast(`${label} selesai.`, 'ok');
     oc.plugins = null;
-    await loadPlugins(true);
+    await loadOpenCodePlugins(true);
     return true;
   } catch (err) {
     if (status) status.textContent = err.message;
@@ -273,7 +275,7 @@ async function showInfo() {
 }
 
 export function initOpenCodeCheck() {
-  $('#btn-settings').addEventListener('click', () => loadPlugins());
+  // The plugin manager lives in the Ekstensi dialog now; this module only wires its controls.
   $('#oc-plugin-add').addEventListener('click', async () => {
     const input = $('#oc-plugin-spec');
     const spec = input.value.trim();

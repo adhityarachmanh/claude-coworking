@@ -168,6 +168,7 @@ export const OPENCODE_CAPS = Object.freeze({
   exportSession: false, // Claude transcripts only; OpenCode has its own JSON export in Riwayat Sesi
   permissions: false, // Claude settings files; OpenCode uses opencode.json
   extensions: false, // Claude plugins/agents/hooks; OpenCode manages its own
+  plugins: true, // 🧩 npm/Git plugins, managed in the same dialog as Claude's (opencode plugin)
   search: true, // Claude transcripts + OpenCode sessions (src/opencode-search.js)
   mirror: true, // sessions opened in a terminal, from the shared background service (src/opencode-mirror.js)
   // The three native OpenCode modes: Build (normal work, auto-edit), Plan (read-only planning) and Auto (shell/web

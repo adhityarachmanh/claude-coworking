@@ -76,6 +76,16 @@ async function checkView() {
   return JSON.parse(text.match(/^data: (.*)$/m)[1]).config.opencodeCheck;
 }
 
+/** The fixture project ('toko') as the server knows it; the page must switch to it before /plugin. */
+async function fixtureProjectId() {
+  const res = await fetch(`${BASE}/stream`);
+  const reader = res.body.getReader();
+  let text = '';
+  while (!text.includes('\n\n')) text += new TextDecoder().decode((await reader.read()).value);
+  reader.cancel();
+  return JSON.parse(text.match(/^data: (.*)$/m)[1]).projects.find((p) => p.name === 'toko')?.id ?? null;
+}
+
 /** Polls the server until its check view matches (bounded). */
 async function waitView(pred, message, ms = 30000) {
   const end = Date.now() + ms;
@@ -219,8 +229,25 @@ describe('🧩 OpenCode banner when contract checks fail', { skip: SKIP ?? false
         [true, true],
         'Update OpenCode + restart layanan tampil di tab Sistem',
       );
-      await page.waitFor(() => /superpowers/.test(document.querySelector('#oc-plugin-list')?.textContent ?? ''), { message: 'daftar plugin OpenCode' });
+      // 🧩 Plugin OpenCode now lives in the Ekstensi dialog (one dialog for both engines): the project is switched to
+      // OpenCode, then /plugin shows the npm/Git manager instead of the Claude marketplace.
+      const id = await fixtureProjectId();
+      assert.ok(id, 'project fixture toko ada');
+      await page.eval(async (pid) => {
+        (await import('/js/features/picker.js')).selectProject(pid);
+      }, id);
+      assert.equal((await api(`/api/projects/${id}/settings`, { engine: 'opencode' })).status, 200, 'project pindah ke OpenCode');
+      await page.waitFor(async (pid) => (await import('/js/core/state.js')).state.statuses[pid]?.engine === 'opencode', { timeoutMs: 15000, message: 'engine OpenCode aktif' }, id);
+      await page.eval(async () => {
+        (await import('/js/features/extensions.js')).openExtensions('plugins');
+      });
+      await page.waitFor(() => /superpowers/.test(document.querySelector('#oc-plugin-list')?.textContent ?? ''), { message: 'daftar plugin OpenCode di dialog Ekstensi' });
       assert.equal(await page.eval(() => document.querySelectorAll('#oc-plugin-list .oc-plugin-row').length), 1);
+      assert.deepEqual(
+        await page.eval(() => [!document.querySelector('#ext-oc-plugins').hidden, document.querySelector('#ext-tabs').hidden, document.querySelector('#ext-title-text').textContent]),
+        [true, true, 'Ekstensi OpenCode'],
+        'plugin OpenCode tampil, tab Claude (agents/hooks) tidak',
+      );
       await page.eval(() => document.querySelector('#oc-run').scrollIntoView({ block: 'center' }));
       await page.click('#oc-run');
       await page.waitFor(() => /\(manual, tanpa token\)/.test(document.querySelector('#oc-status').textContent) && !document.querySelector('#oc-run').disabled, { timeoutMs: 30000, message: 'manual run finished' });

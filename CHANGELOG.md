@@ -4,6 +4,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🧩 Plugin satu pintu untuk dua mesin.** Dialog **Ekstensi** mengikuti mesin project: Claude Code menampilkan marketplace (pasang, aktif/nonaktif, hapus) beserta Agents/Hooks; OpenCode menampilkan pengelola plugin npm/URL Git (tambah, hapus, update, cek update, update semua). Bisa dibuka dari ⋯ → **🧩 Plugin & ekstensi…**, ⚙ → **🧩 Plugin**, atau `/plugin`. Blok plugin OpenCode yang lama di Kompatibilitas diganti satu pintu ini.
+
 - **🔌 Server MCP lebih lengkap.** **＋ Tambah server** menerima **header HTTP** untuk server remote, dan di Claude Code transport **SSE** lama masih bisa dipilih. Header/env Claude dikirim lewat stdin (`mcp add-json`), jadi rahasianya tidak muncul sebagai argumen proses. Untuk OpenCode, setiap server punya **⚙ Lanjutan**: nonaktif, Code Mode, pool koneksi, versi protokol (legacy/auto/2026-07-28), folder kerja, dan timeout startup/katalog/eksekusi — hanya kunci itu yang diubah, file lama dicadangkan.
 - **⏰ Automation: server MCP dipilih.** Pada trigger **Event MCP**, kolom server menawarkan nama server MCP project ini (tetap bisa diketik bebas); nama event datang dari servernya dan diberi contoh.
 - **📅 Rekap mingguan otomatis.** Di ⋯ → **Pola kerja** pilih **Aktif**, hari, dan jam. Server membuat rekap 7 hari pada slot itu tanpa memanggil model, lalu menampilkannya di **⚠ Perlu tindakan** sampai kamu membuka Pola kerja (tempat rekap bisa disalin).

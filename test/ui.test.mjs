@@ -4663,6 +4663,7 @@ for (const vp of VIEWPORTS) {
           exportSession: document.querySelector('#more-menu [data-more="export-session"]').hidden,
           permissionsBtn: document.querySelector('#btn-permissions').hidden,
           plugins: capBlocked('extensions'),
+          pluginManager: capBlocked('plugins'),
           rewind: capBlocked('rewind'),
           modes: [...document.querySelectorAll('#mode option')].filter((o) => !o.hidden).map((o) => o.value),
           note: document.querySelector('#engine-note').textContent,
@@ -4682,6 +4683,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(caps.opencode.exportSession, true, 'Export sesi lengkap Claude disembunyikan');
       assert.equal(caps.opencode.permissionsBtn, true, 'tombol di ⚙ ikut tersembunyi');
       assert.match(caps.opencode.plugins, /opencode\.json/i, 'plugin/agent Claude diarahkan ke opencode.json');
+      assert.equal(caps.opencode.pluginManager, null, 'dialog plugin tetap tersedia untuk OpenCode');
       assert.equal(caps.opencode.rewind, null, 'OpenCode project tetap boleh rewind');
       assert.deepEqual(caps.opencode.modes, ['build', 'plan', 'autopilot'], 'Build, Plan, dan Auto');
       assert.equal(caps.opencode.note, '', 'OpenCode mendukung effort/team/rewind/MCP/tugas latar: tanpa catatan "belum mendukung"');
@@ -4689,6 +4691,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(caps.claude.exportSession, false);
       assert.equal(caps.claude.permissionsBtn, false);
       assert.equal(caps.claude.plugins, null);
+      assert.equal(caps.claude.pluginManager, null);
       assert.deepEqual(caps.claude.modes, ['build', 'plan', 'autopilot']);
       assert.deepEqual(realProblems(page), [], 'tanpa error console');
     });

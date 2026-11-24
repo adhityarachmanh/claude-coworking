@@ -6,15 +6,19 @@ import { engineOf } from '../core/engine-caps.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { guardCap } from './engine.js';
+import { loadOpenCodePlugins } from './opencode-check.js';
 
 const ext = { tab: 'plugins', project: null, plugins: null, filter: '', agents: [], editing: null, hooks: [], hookEvents: [], hookEditing: null };
 const MAX_LIST = 60;
 
 export function openExtensions(tab = 'plugins') {
-  if (guardCap('extensions')) return;
+  const opencode = engineOf(state.statuses[state.active] ?? {}, state.config) === 'opencode';
+  // OpenCode has its own plugin manager (npm/Git) but no Claude plugins/agents/hooks; `plugins` is true for both.
+  if (opencode && (tab === 'agents' || tab === 'hooks')) return toast('Agent OpenCode diatur di Pengaturan giliran → Agent; hooks hanya untuk Claude Code.', 'warn');
+  if (guardCap(opencode ? 'plugins' : 'extensions')) return;
   if (state.readOnly) return toast('Ekstensi hanya bisa dibuka dari laptop atau lewat Tailscale.', 'warn');
   ext.project = state.active && state.active !== DEMO_ID ? state.active : null;
-  ext.tab = tab;
+  ext.tab = opencode ? 'plugins' : tab;
   ext.editing = null;
   openModal('ext-modal');
   render();
@@ -22,6 +26,10 @@ export function openExtensions(tab = 'plugins') {
 }
 
 async function load(force = false) {
+  if (engineOf(state.statuses[ext.project ?? state.active] ?? {}, state.config) === 'opencode') {
+    loadOpenCodePlugins(force); // the OpenCode block loads itself; no Claude marketplace request
+    return;
+  }
   try {
     if (ext.tab === 'plugins') {
       if (!ext.plugins || force) {
@@ -52,8 +60,17 @@ function render() {
   $('#ext-project').textContent = ext.project ? `· ${projectName(ext.project)}` : '';
   const body = $('#ext-body');
   const opencode = engineOf(state.statuses[ext.project ?? state.active] ?? {}, state.config) === 'opencode';
-  if (opencode && ext.tab !== 'plugins') body.innerHTML = '<p class="muted small">Project ini memakai OpenCode: agent OpenCode diatur di opencode.json (dipilih di Pengaturan giliran → Agent). Tab ini mengelola milik Claude Code.</p>';
-  else body.innerHTML = '';
+  // One dialog, two engines: title, tabs and panel follow the project's engine.
+  $('#ext-title-text').textContent = opencode ? 'Ekstensi OpenCode' : 'Ekstensi Claude Code';
+  $('#ext-tabs').hidden = opencode; // agents/hooks are Claude-only; OpenCode has its own Agent editor
+  const ocPlugins = $('#ext-oc-plugins');
+  if (ocPlugins) ocPlugins.hidden = !opencode;
+  if (opencode) {
+    body.innerHTML = '<p class="muted small">Project ini memakai OpenCode. Agent OpenCode diatur di Pengaturan giliran → Agent; plugin di bawah berlaku untuk semua project.</p>';
+    loadOpenCodePlugins();
+    return;
+  }
+  body.innerHTML = '';
   if (ext.tab === 'plugins') body.insertAdjacentHTML('beforeend', pluginsHtml());
   else if (!ext.project) body.insertAdjacentHTML('beforeend', '<p class="muted">Pilih project dulu.</p>');
   else if (ext.tab === 'agents') body.insertAdjacentHTML('beforeend', ext.editing ? agentFormHtml(ext.editing) : agentsHtml());
@@ -197,6 +214,8 @@ function hookFormHtml(h) {
 }
 
 export function initExtensions() {
+  // Settings → 🧩 Plugin: the same dialog as /plugin, on whichever engine the active project runs.
+  $('#plugins-open')?.addEventListener('click', () => openExtensions('plugins'));
   $('#ext-tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('[data-tab]')?.dataset.tab;
     if (!tab || tab === ext.tab) return;

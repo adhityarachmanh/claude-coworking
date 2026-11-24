@@ -156,6 +156,7 @@
               <button role="menuitem" data-more="worktree">⎇ Worktree…</button>
               <button role="menuitem" data-more="dirs" data-cap="permissions" title="Folder di luar project yang boleh dibaca dan ditulis Claude Code">📂 Folder tambahan…</button>
               <button role="menuitem" data-more="skills">🧩 Skills…</button>
+              <button role="menuitem" data-more="extensions" title="Plugin dan ekstensi untuk project aktif: Claude Code (marketplace/agents/hooks) atau OpenCode (npm/URL Git)">🧩 Plugin &amp; ekstensi…</button>
               <button role="menuitem" data-more="style" data-cap="permissions" title="Gaya jawaban Claude: bawaan atau kustom (.claude/output-styles)">🎭 Output style…</button>
               <button role="menuitem" data-more="claude-flags" data-cap="permissions" title="Flag Claude per project: model cadangan, batas giliran/anggaran, tool, sumber setting">⚙️ Flag Claude…</button>
               <button role="menuitem" data-more="auto-mode" data-cap="permissions" title="Aturan classifier Auto mode Claude (semua project, laptop)">🎛️ Auto mode Claude…</button>
@@ -536,13 +537,28 @@
     <!-- 🧩 Ekstensi (/plugin, /agents, /hooks; features/extensions.js) -->
     <div id="ext-modal" class="modal" hidden>
       <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="ext-title">
-        <div class="modal-head"><b id="ext-title">Ekstensi Claude Code <small id="ext-project" class="muted"></small></b><button id="ext-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="ext-title"><span id="ext-title-text">Ekstensi Claude Code</span> <small id="ext-project" class="muted"></small></b><button id="ext-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="ext-tabs" class="engine-opts" role="group" aria-label="Jenis ekstensi">
           <button type="button" class="engine-opt" data-tab="plugins">🧩 Plugin</button>
           <button type="button" class="engine-opt" data-tab="agents">🤖 Agents</button>
           <button type="button" class="engine-opt" data-tab="hooks">🪝 Hooks</button>
         </div>
         <div id="ext-body" class="ext-body"></div>
+        <!-- 🧩 Plugin OpenCode (features/opencode-check.js): npm/Git, global for every project; shown when the
+             project runs OpenCode, so /plugin is one dialog for both engines. -->
+        <div id="ext-oc-plugins" class="oc-plugins" hidden>
+          <b>🧩 Plugin OpenCode</b>
+          <p class="muted small">Paket npm atau URL Git, berlaku untuk semua project dan dijalankan OpenCode. Plugin menjalankan kode pihak ketiga — tambahkan hanya dari sumber tepercaya.</p>
+          <div id="oc-plugin-list" class="oc-plugin-list" aria-live="polite"><p class="muted small">Memuat plugin…</p></div>
+          <div class="oc-plugin-add">
+            <input id="oc-plugin-spec" type="text" autocomplete="off" spellcheck="false" maxlength="300" placeholder="paket npm atau URL Git" aria-label="Paket plugin OpenCode" />
+            <button type="button" id="oc-plugin-add" class="ghost">＋ Tambah</button>
+            <button type="button" id="oc-plugin-check" class="ghost">↻ Cek update</button>
+            <button type="button" id="oc-plugin-update-all" class="ghost">⬆ Update semua</button>
+          </div>
+          <p id="oc-plugin-status" class="muted small" role="status" aria-live="polite"></p>
+          <pre id="oc-plugin-output" class="cc-output" hidden></pre>
+        </div>
       </div>
     </div>
 
@@ -1293,19 +1309,6 @@
             </div>
             <pre id="oc-output" class="cc-output" hidden></pre>
             <pre id="oc-info-out" class="cc-output" hidden></pre>
-            <div class="oc-plugins" role="group" aria-labelledby="oc-plugins-title">
-              <b id="oc-plugins-title">🧩 Plugin OpenCode</b>
-              <p class="muted small">Plugin menjalankan kode pihak ketiga. Tambahkan hanya dari sumber tepercaya.</p>
-              <div id="oc-plugin-list" class="oc-plugin-list" aria-live="polite"><p class="muted small">Buka Pengaturan untuk memuat plugin…</p></div>
-              <div class="oc-plugin-add">
-                <input id="oc-plugin-spec" type="text" autocomplete="off" spellcheck="false" maxlength="300" placeholder="paket npm atau URL Git" aria-label="Paket plugin OpenCode" />
-                <button type="button" id="oc-plugin-add" class="ghost">＋ Tambah</button>
-                <button type="button" id="oc-plugin-check" class="ghost">↻ Cek update</button>
-                <button type="button" id="oc-plugin-update-all" class="ghost">⬆ Update semua</button>
-              </div>
-              <p id="oc-plugin-status" class="muted small" role="status" aria-live="polite"></p>
-              <pre id="oc-plugin-output" class="cc-output" hidden></pre>
-            </div>
             <div class="oc-config" role="group" aria-labelledby="oc-config-title">
               <b id="oc-config-title">🧩 Config &amp; Agent OpenCode</b>
               <p class="muted small">Ubah model dan agent di <code>opencode.json</code>. File lama dibackup otomatis.</p>
@@ -1313,6 +1316,14 @@
             </div>
           </section>
           <hr id="oc-section-sep" hidden />
+          <!-- 🧩 Plugin: one entry for both engines, opening the Ekstensi dialog on its Plugin tab (extensions.js). -->
+          <section id="plugins-section" class="claude-check" aria-labelledby="plugins-title">
+            <b id="plugins-title">🧩 Plugin</b>
+            <p class="muted small">Kelola plugin untuk project aktif: <b>Claude Code</b> (marketplace, aktif/nonaktif) atau <b>OpenCode</b> (paket npm/URL Git).</p>
+            <div class="backup-actions"><button type="button" id="plugins-open" class="ghost">🧩 Kelola plugin…</button></div>
+            <p id="plugins-engine" class="muted small"></p>
+          </section>
+          <hr />
           <!-- Sebuah HP lewat Tailscale boleh mengubah setelan di tab ini, kecuali yang menuntut mesin ini sendiri:
                UAC (nyala otomatis/autologon). Catatan ini menggantikan dua kontrol itu dengan status kesiapan
                reboot (core/autostart-rules.js), bukan menyisakan ruang kosong. -->

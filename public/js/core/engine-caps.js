@@ -29,6 +29,7 @@ export const CLAUDE_CAPS = Object.freeze({
   exportSession: true,
   permissions: true,
   extensions: true,
+  plugins: true, // 🧩 npm/Git plugins for OpenCode, marketplace for Claude; managed in one dialog
   search: true,
   mirror: true,
   modes: Object.freeze([...ALL_MODES]),
@@ -47,6 +48,7 @@ const CAP_FEATURE = {
   exportSession: 'export sesi lengkap Claude Code (pakai Export percakapan)',
   permissions: 'aturan izin Claude Code',
   extensions: 'pengelolaan ekstensi Claude Code',
+  plugins: 'pengelolaan plugin untuk model yang aktif',
   search: 'pencarian percakapan',
   mirror: 'mirror sesi terminal',
 };

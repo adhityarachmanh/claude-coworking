@@ -43,7 +43,7 @@ export const LOCAL_COMMANDS = [
   { name: 'team', aliases: ['tim'], description: '👥 Kelola tim: pilih role bawaan yang punya meja di kantor (Lead selalu ada)' },
   { name: 'antrian', aliases: ['queue'], description: '📋 Antrian prompt: susun beberapa prompt, dijalankan satu per satu saat tim tidak sibuk' },
   { name: 'tasks', description: 'Tugas latar: perintah & agent yang berjalan, output-nya, hentikan' },
-  { name: 'plugin', aliases: ['plugins'], description: '🧩 Plugin Claude Code: pasang dari marketplace, aktif/nonaktif, hapus' },
+  { name: 'plugin', aliases: ['plugins'], description: '🧩 Plugin: Claude Code (marketplace) atau OpenCode (npm/URL Git), mengikuti project aktif' },
   { name: 'agents', description: '🤖 Subagent buatan sendiri (.claude/agents): buat, edit, hapus' },
   { name: 'hooks', description: '🪝 Hooks yang aktif (settings.json user/project/pribadi)' },
   { name: 'skills', description: '🧩 Skills (SKILL.md) untuk Claude Code & OpenCode: lihat, buat, edit, hapus' },

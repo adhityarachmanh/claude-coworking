@@ -2,6 +2,7 @@
 import { api, apiGet, laptopBlocked, toast } from '../core/api.js';
 import { laptopBootNote } from '../core/autostart-rules.js';
 import { $ } from '../core/dom.js';
+import { engineOf } from '../core/engine-caps.js';
 import { APP_NAME, DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { loadBudgetView, syncBudgetSection } from './budget.js';
@@ -93,6 +94,14 @@ export function selectSettingsTab(tab = settingsTab) {
   if (!$('#settings-modal')?.hidden && tab === 'umum') loadBudgetView();
   // ⏰ Tugas terjadwal: refresh the project list and the stored schedules when its tab is shown.
   if (!$('#settings-modal')?.hidden && tab === 'jadwal') openRoutines();
+  // 🧩 Plugin: the same dialog serves both engines; the line below says which manager it will open.
+  const pluginHint = $('#plugins-engine');
+  if (pluginHint) {
+    const opencode = engineOf(state.statuses[state.active] ?? {}, state.config) === 'opencode';
+    pluginHint.textContent = opencode
+      ? 'Project aktif: OpenCode — plugin npm/URL Git, berlaku untuk semua project.'
+      : 'Project aktif: Claude Code — plugin marketplace: pasang, aktif/nonaktif, hapus.';
+  }
 }
 
 // ---------- ⚡ Batas giliran bersamaan (POST /api/concurrency/save: laptop or a phone over Tailscale) ----------
