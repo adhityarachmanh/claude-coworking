@@ -65,14 +65,14 @@ export const DEMO_ID = 'demo';
 // 💬 The built-in "Chat umum": a project with the same engines as any other, but its folder is an app-owned sandbox
 // under dataDir, so a general chat never touches a real project folder. A fixed id (never the folder hash).
 export const GENERAL_ID = 'chat-umum';
-export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [], claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false, claudeForwardSubagentText: false, claudeNoSessionPersistence: false, claudeSafeMode: false, claudeDebug: false };
+export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [], claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false, claudeForwardSubagentText: false, claudeNoSessionPersistence: false, claudeSafeMode: false, claudeDebug: false, claudeAppendPrompt: '' };
 
 // 🎛️ Claude's per-project spawn flags. One sanitizer for both the write path (cleanSettings) and settingsFor, so a
 // hand-edited state.json can never reach the spawn arguments.
 const CLAUDE_FALLBACK = /^[\w./:#,-]{0,200}$/;
 const CLAUDE_TOOL_TEXT = /^[\x20-\x7e]{0,500}$/;
 const CLAUDE_SOURCES = /^(user|project|local)(,(user|project|local)){0,2}$/;
-const CLAUDE_FLAG_DEFAULTS = { claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false, claudeForwardSubagentText: false, claudeNoSessionPersistence: false, claudeSafeMode: false, claudeDebug: false };
+const CLAUDE_FLAG_DEFAULTS = { claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false, claudeForwardSubagentText: false, claudeNoSessionPersistence: false, claudeSafeMode: false, claudeDebug: false, claudeAppendPrompt: '' };
 
 const cleanFlagNumber = (raw, { decimal = false } = {}) => {
   if (raw === null || raw === '') return null;
@@ -161,6 +161,12 @@ function cleanClaudeFlags(base, patch) {
       else if (k && Number(k[1]) >= 100) next.claudeAutocompact = `${Number(k[1])}k`;
       else if (n && Number(n[1]) >= 100_000) next.claudeAutocompact = n[1];
     }
+  }
+  if ('claudeAppendPrompt' in patch) {
+    const raw = typeof patch.claudeAppendPrompt === 'string' ? patch.claudeAppendPrompt.replace(/\u0000/g, '') : '';
+    const text = raw.trim();
+    if (!text) next.claudeAppendPrompt = '';
+    else if (text.length <= 4000) next.claudeAppendPrompt = text;
   }
   return next;
 }

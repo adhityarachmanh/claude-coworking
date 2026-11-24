@@ -22,6 +22,7 @@ function render() {
   $('#cf-allowed').value = (st.claudeAllowedTools ?? []).join('\n');
   $('#cf-disallowed').value = (st.claudeDisallowedTools ?? []).join('\n');
   set('#cf-sources', st.claudeSettingSources ?? '');
+  set('#cf-extra-prompt', st.claudeAppendPrompt ?? '');
   set('#cf-advisor', st.claudeAdvisor ?? '');
   $('#cf-fast').checked = st.claudeFastMode === true;
   $('#cf-suggest').checked = st.claudePromptSuggestions === true;
@@ -57,6 +58,7 @@ async function save() {
     claudeAllowedTools: lines('#cf-allowed'),
     claudeDisallowedTools: lines('#cf-disallowed'),
     claudeSettingSources: sources || null,
+    claudeAppendPrompt: $('#cf-extra-prompt').value.trim(),
     claudeAdvisor: advisor,
     claudeFastMode: $('#cf-fast').checked,
     claudePromptSuggestions: $('#cf-suggest').checked,

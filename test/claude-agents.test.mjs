@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { backgroundAgentAction, backgroundAgentLogs, daemonStatus, listBackgroundAgents } from '../src/claude-admin.js';
+import { backgroundAgentAction, backgroundAgentLogs, daemonStatus, listBackgroundAgents, startBackgroundAgent } from '../src/claude-admin.js';
 
 const FAKE = path.join(process.cwd(), 'test-support', 'fake-claude.mjs');
 const bin = { command: process.execPath, args: [FAKE] };
@@ -86,5 +86,21 @@ test('daemonStatus: teks dan running mengikuti CLI (exit 1 saat berhenti)', asyn
   } finally {
     box.done();
     delete process.env.FAKE_DAEMON_RUNNING;
+  }
+});
+
+test('startBackgroundAgent: `claude --bg`, nama opsional, prompt divalidasi', async () => {
+  const box = sandbox();
+  try {
+    const started = await startBackgroundAgent(bin, { prompt: 'periksa build', name: 'cek-build', cwd: box.dir });
+    assert.equal(started.ok, true);
+    assert.match(started.output, /bg-new123/);
+    assert.deepEqual(box.read().at(-1), ['--bg', '--name', 'cek-build', 'periksa build']);
+    await startBackgroundAgent(bin, { prompt: 'tanpa nama', cwd: box.dir });
+    assert.deepEqual(box.read().at(-1), ['--bg', 'tanpa nama']);
+    await assert.rejects(startBackgroundAgent(bin, { prompt: '', cwd: box.dir }), (e) => e.status === 400);
+    await assert.rejects(startBackgroundAgent(bin, { prompt: 'x', name: '--evil', cwd: box.dir }), (e) => e.status === 400);
+  } finally {
+    box.done();
   }
 });

@@ -3,7 +3,7 @@
 // subagent (~/.claude/agents: every project) and the GitHub login: laptop only (a plugin runs code on this laptop;
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
-import { AdminError, backgroundAgentAction, backgroundAgentLogs, claudePurgePlan, claudePurgeProject, daemonStatus, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listBackgroundAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, pluginConfigure, pluginDetails, readAutoMode, saveAgent, saveAutoMode, saveHook } from '../claude-admin.js';
+import { AdminError, backgroundAgentAction, backgroundAgentLogs, claudePurgePlan, claudePurgeProject, daemonStatus, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listBackgroundAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, pluginConfigure, pluginDetails, readAutoMode, saveAgent, saveAutoMode, saveHook, startBackgroundAgent } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { json } from './http.js';
@@ -129,6 +129,17 @@ export function register(router) {
     '/api/claude/background-agents/daemon',
     guard(({ claude }) => daemonStatus(claude)),
     { maxBody: 1024 },
+  );
+  router.post(
+    '/api/claude/background-agents/start',
+    guard(async ({ claude, hub }, req, res, params, body) => {
+      const project = hub?.projects?.get(String(body.projectId ?? ''));
+      if (!project || project.virtual) throw new AdminError(404, 'Project tidak ditemukan.');
+      const result = await startBackgroundAgent(claude, { prompt: String(body.prompt ?? ''), name: String(body.name ?? ''), cwd: project.path });
+      console.log(`Sesi latar Claude dimulai di ${project.name}: ${String(body.prompt).slice(0, 80)}`);
+      return result;
+    }, { laptop: true }),
+    { maxBody: 16 * 1024 },
   );
 
   // your own subagents (.claude/agents) and hooks (read-only)

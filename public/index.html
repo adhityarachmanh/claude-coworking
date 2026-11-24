@@ -586,6 +586,16 @@
         <label class="switch"><input id="bg-agents-all" type="checkbox" checked /> Tampilkan yang sudah selesai</label>
         <p id="bg-agents-daemon" class="muted small" role="status" aria-live="polite"></p>
         <p id="bg-agents-status" class="muted small" role="status" aria-live="polite"></p>
+        <details class="oc-backups" id="bg-agents-new">
+          <summary>＋ Sesi latar baru</summary>
+          <div class="oc-form-grid">
+            <label class="oc-field"><span>Nama (opsional)</span><input id="bg-agent-name" maxlength="60" autocomplete="off" placeholder="perbaiki checkout" /></label>
+            <label class="oc-field"><span>Project</span><select id="bg-agent-project"></select></label>
+          </div>
+          <label class="oc-field"><span>Prompt *</span><textarea id="bg-agent-prompt" rows="3" maxlength="4000" placeholder="Periksa build terakhir dan laporkan yang gagal."></textarea></label>
+          <p class="muted small">Sesi berjalan di daemon Claude Code dan memakai kuota seperti sesi biasa. Lampirkan/balas tetap lewat terminal.</p>
+          <div class="acct-actions"><button type="button" id="bg-agent-start" class="primary">▶ Mulai sesi</button></div>
+        </details>
         <ul id="bg-agents-list" class="ext-list"></ul>
         <pre id="bg-agents-log" class="cc-output" hidden></pre>
       </div>
@@ -1784,6 +1794,7 @@
         <label class="oc-field"><span>Boleh tanpa prompt (--allowedTools)</span><textarea id="cf-allowed" rows="3" placeholder="Read&#10;Bash(git log *)"></textarea></label>
         <label class="oc-field"><span>Larang (--disallowedTools)</span><textarea id="cf-disallowed" rows="3" placeholder="Bash(rm *)"></textarea></label>
         <label class="oc-field"><span>Sumber setting (--setting-sources)</span><input id="cf-sources" maxlength="40" placeholder="user,project,local (kosong = semua)" /></label>
+        <label class="oc-field"><span>Instruksi sistem tambahan (--append-system-prompt)</span><textarea id="cf-extra-prompt" rows="3" maxlength="4000" placeholder="mis. Selalu jawab dalam bahasa Indonesia dan sebut file yang diubah."></textarea></label>
         <div class="oc-form-grid">
           <label class="oc-field"><span>Model advisor (--advisor)</span><input id="cf-advisor" maxlength="100" placeholder="opus / sonnet (kosong = mati)" /></label>
           <label class="oc-field"><span>Fast mode</span><input id="cf-fast" type="checkbox" /></label>

@@ -55,6 +55,12 @@ if (args[0] === 'mcp' && args[1] === 'add-json') {
   });
   // No fall-through: the JSON on stdin is the input, so this process waits for it (top-level `return` is illegal here).
 }
+// `claude --bg "<prompt>"` (agent view dispatch): the fake reports a new id and exits, like the real CLI.
+if (args[0] === '--bg') {
+  if (process.env.FAKE_AGENTS_LOG) appendFileSync(process.env.FAKE_AGENTS_LOG, `${JSON.stringify(args)}\n`);
+  console.log('Started background session bg-new123. Run `claude attach bg-new123` to open it.');
+  process.exit(0);
+}
 // `claude daemon status`: a stopped daemon exits 1 (the app shows the text and a warning either way).
 if (args[0] === 'daemon' && args[1] === 'status') {
   const running = process.env.FAKE_DAEMON_RUNNING === '1';

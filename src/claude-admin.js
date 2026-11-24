@@ -274,6 +274,23 @@ export async function backgroundAgentAction(bin, { action, id }) {
   return { ok: true, message: firstLine({ out: r.out, err: '' }) };
 }
 
+/** Start a new background session (`claude --bg`), optionally named; it runs in the project folder. */
+export async function startBackgroundAgent(bin, { prompt, name = '', cwd } = {}) {
+  const text = String(prompt ?? '').trim();
+  if (!text) throw new AdminError(400, 'Prompt sesi latar masih kosong.');
+  if (text.length > 4000) throw new AdminError(400, 'Prompt sesi latar maksimal 4000 karakter.');
+  const args = ['--bg'];
+  const label = String(name ?? '').trim();
+  if (label) {
+    if (!/^[A-Za-z0-9][\w .-]{0,59}$/.test(label)) throw new AdminError(400, 'Nama sesi: huruf, angka, spasi, titik atau minus (maks 60).');
+    args.push('--name', label);
+  }
+  args.push(text);
+  const r = await runClaude(bin, args, { cwd, timeout: 30_000 });
+  if (!r.ok) throw new AdminError(502, firstLine(r));
+  return { ok: true, output: `${r.out}\n${r.err}`.trim().slice(-2000) };
+}
+
 /** `claude logs <id|name>`: the most recent output, bounded before it reaches the browser. */
 export async function backgroundAgentLogs(bin, ref) {
   if (!AGENT_REF.test(String(ref ?? ''))) throw new AdminError(400, 'Sesi tidak valid.');

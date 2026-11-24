@@ -2493,4 +2493,11 @@ test('🖥 Sesi latar Claude: daftar dari agent view, aksi, log, dan id divalida
   assert.equal(log.status, 200, JSON.stringify(log.body));
   assert.match(log.body.text, /output sesi/);
   assert.equal((await api('/api/claude/background-agents/logs', { ref: '--evil' })).status, 400);
+  // ▶ Mulai sesi latar baru (claude --bg) di folder project.
+  const pid = await projectId();
+  const started = await api('/api/claude/background-agents/start', { projectId: pid, prompt: 'periksa build', name: 'cek-build' });
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  assert.match(started.body.output, /bg-new123/);
+  assert.equal((await api('/api/claude/background-agents/start', { projectId: pid, prompt: '' })).status, 400);
+  assert.equal((await api('/api/claude/background-agents/start', { projectId: 'tidak-ada', prompt: 'x' })).status, 404);
 });

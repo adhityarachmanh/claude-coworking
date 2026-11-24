@@ -84,8 +84,45 @@ async function loadDaemon() {
   }
 }
 
+/** Starts a new background session in the chosen project (`claude --bg`); it appears after the daemon registers it. */
+async function startAgent() {
+  const prompt = $('#bg-agent-prompt').value.trim();
+  const name = $('#bg-agent-name').value.trim();
+  const projectId = $('#bg-agent-project').value;
+  if (!prompt) {
+    $('#bg-agents-status').textContent = 'Isi prompt sesi latar dulu.';
+    return;
+  }
+  $('#bg-agent-start').disabled = true;
+  $('#bg-agents-status').textContent = 'Memulai sesi latar…';
+  try {
+    const r = await api('/api/claude/background-agents/start', { projectId, prompt, name });
+    $('#bg-agent-prompt').value = '';
+    $('#bg-agent-name').value = '';
+    toast('Sesi latar dimulai.', 'ok');
+    $('#bg-agents-status').textContent = r.output || 'Sesi latar dimulai.';
+    setTimeout(() => {
+      load();
+      loadDaemon();
+    }, 1500);
+  } catch (err) {
+    $('#bg-agents-status').textContent = err.message;
+  } finally {
+    $('#bg-agent-start').disabled = false;
+  }
+}
+
 export function openClaudeAgents() {
   openModal('bg-agents-modal');
+  // The new-session form is laptop-only; the list itself is readable from Tailscale.
+  const form = $('#bg-agents-new');
+  if (form) form.hidden = !state.local;
+  const select = $('#bg-agent-project');
+  if (select) {
+    const projects = (state.projects ?? []).filter((p) => p && p.id !== 'demo');
+    select.innerHTML = projects.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('');
+    if (projects.some((p) => p.id === state.active)) select.value = state.active;
+  }
   load();
   loadDaemon();
   clearInterval(bg.timer);
@@ -101,6 +138,7 @@ export function initClaudeAgents() {
     loadDaemon();
   });
   $('#bg-agents-all')?.addEventListener('change', () => load());
+  $('#bg-agent-start')?.addEventListener('click', startAgent);
   $('#bg-agents-list')?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-bg]');
     if (!btn) return;

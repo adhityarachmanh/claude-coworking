@@ -4,6 +4,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **▶ Mulai sesi latar Claude.** Panel Sesi latar Claude kini punya **＋ Sesi latar baru**: prompt (maks 4000) dan nama opsional, dijalankan `claude --bg` di folder project terpilih. Sesi muncul di daftar setelah daemon mendaftarkannya (auto-refresh); tetap memakai kuota.
+- **📝 Instruksi sistem tambahan per project.** ⚙ Flag Claude → **Instruksi sistem tambahan** (`--append-system-prompt`, maks 4000) digabung dengan prompt tim (`--append-system-prompt-file`) saat proses Claude dimulai; perubahan berlaku pada pesan berikutnya.
 - **📊 Lampiran Excel (.xlsx).** Lampirkan file Excel lewat 📎, drag & drop, atau paste: server membacanya tanpa dependensi baru (ZIP+XML), mengubah tiap sheet menjadi teks tab-separated (nama sheet, jumlah baris/kolom; maks 10 sheet, 1000 baris, 100 kolom), lalu mengirimnya sebagai lampiran teks. Batas 10 MB per file dan 200 KB isi; `.xls` lama diarahkan ke `.xlsx`/`.csv`.
 - **📋 Paste sel Excel.** Menyalin sel dari Excel lalu paste ke kotak pesan kini menjadi **tabel Markdown** (header + baris, maks 100×30, pipa di-escape); daftar satu kolom tetap teks biasa.
 
