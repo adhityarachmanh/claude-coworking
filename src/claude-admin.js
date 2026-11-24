@@ -194,6 +194,15 @@ export async function daemonStatus(bin) {
   return { running: r.ok && !/not running/i.test(text), text };
 }
 
+/** 🧹 `claude plugin prune`: orphaned auto-installed dependencies, previewed first and removed with `-y`. */
+export async function pluginPrune(bin, { confirm = false } = {}) {
+  const r = await runClaude(bin, ['plugin', 'prune', ...(confirm ? ['-y'] : ['--dry-run'])], { timeout: 120_000 });
+  if (!r.ok) throw new AdminError(502, firstLine(r));
+  const text = `${r.out}\n${r.err}`.trim();
+  if (confirm) pluginCache = null;
+  return { ok: true, confirmed: confirm, text: text.slice(-4000) };
+}
+
 /** add (a URL/path/owner-repo) | remove (a configured name) | update (one name, or every marketplace). */
 export async function marketplaceAction(bin, { action, source = '', name = '' }) {
   if (!['add', 'remove', 'update'].includes(action)) throw new AdminError(400, 'Aksi marketplace tidak dikenal.');

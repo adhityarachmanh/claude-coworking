@@ -2046,6 +2046,12 @@ test('🧩 Ekstensi: plugins (install with a shown marketplace command, enable/d
   assert.deepEqual(savedOptions.body.saved, ['api_url']);
   assert.equal((await api('/api/claude/plugins/configure', { id: 'reviewer@official', values: { 'bad key': 'x' } })).status, 400);
   assert.equal((await api('/api/claude/plugins/configure', { id: 'reviewer@official', values: { api_url: 'a\nb' } })).status, 400);
+  const prunePreview = await api('/api/claude/plugins/prune', {});
+  assert.equal(prunePreview.status, 200, JSON.stringify(prunePreview.body));
+  assert.match(prunePreview.body.text, /dry run/i, 'pratinjau dulu');
+  const pruned = await api('/api/claude/plugins/prune', { confirm: true });
+  assert.equal(pruned.status, 200, JSON.stringify(pruned.body));
+  assert.match(pruned.body.text, /Removed 1/, 'dependensi yatim dihapus');
   const daemon = await api('/api/claude/background-agents/daemon', {});
   assert.equal(daemon.status, 200, JSON.stringify(daemon.body));
   assert.equal(daemon.body.running, false, 'fake: daemon berhenti');

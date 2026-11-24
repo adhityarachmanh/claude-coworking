@@ -20,7 +20,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Skills | 🧩 Skills (`/skills`) | ✅ |
 | Output styles | 🎭 Output style (`/output-style`) | ✅ |
 | Subagents (`.claude/agents`) | 🤖 Subagent (menu/`/agents`) | ✅ |
-| Plugins | 🧩 Plugin di dialog **Ekstensi** (menu/`/plugin`): marketplace (pasang, aktif/nonaktif, **update**, hapus), **ℹ Detail** (komponen + biaya token) dan **⚙ Opsi** (`userConfig`, nilai lewat stdin), serta **marketplace terdaftar** (tambah/update/hapus) | ✅ |
+| Plugins | 🧩 Plugin di dialog **Ekstensi** (menu/`/plugin`): marketplace (pasang, aktif/nonaktif, **update**, hapus), **ℹ Detail** (komponen + biaya token), **⚙ Opsi** (`userConfig`, nilai lewat stdin), **marketplace terdaftar** (tambah/update/hapus) dan **prune** dependensi yatim (pratinjau `--dry-run` lalu `-y`) | ✅ |
 | Hooks | 🪝 Hooks (menu/`/hooks`) — lihat, tambah, ubah, hapus | ✅ |
 | MCP servers | 🔌 MCP (`/mcp`): tambah lokal/remote, **header HTTP**, transport HTTP/SSE, status/reconnect/disable/login, **logout** (hapus kredensial OAuth) | ✅ |
 | Rewind/checkpoint & ringkas | ⏪ Rewind, 🧹 Ringkas | ✅ |

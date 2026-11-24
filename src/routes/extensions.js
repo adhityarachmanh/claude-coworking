@@ -3,7 +3,7 @@
 // subagent (~/.claude/agents: every project) and the GitHub login: laptop only (a plugin runs code on this laptop;
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
-import { AdminError, backgroundAgentAction, backgroundAgentLogs, claudePurgePlan, claudePurgeProject, daemonStatus, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listBackgroundAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, pluginConfigure, pluginDetails, readAutoMode, saveAgent, saveAutoMode, saveHook, startBackgroundAgent } from '../claude-admin.js';
+import { AdminError, backgroundAgentAction, backgroundAgentLogs, claudePurgePlan, claudePurgeProject, daemonStatus, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listBackgroundAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, pluginConfigure, pluginDetails, pluginPrune, readAutoMode, saveAgent, saveAutoMode, saveHook, startBackgroundAgent } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { json } from './http.js';
@@ -95,6 +95,21 @@ export function register(router) {
       { laptop: true, claude: true },
     ),
     { maxBody: 64 * 1024 },
+  );
+  router.post(
+    '/api/claude/plugins/prune',
+    guard(
+      async ({ claude, sessions }, req, res, params, body) => {
+        const result = await pluginPrune(claude, { confirm: body.confirm === true });
+        if (result.confirmed) {
+          console.log('Dependensi plugin dibersihkan');
+          sessions.accountChanged();
+        }
+        return result;
+      },
+      { laptop: true, claude: true },
+    ),
+    { maxBody: 1024 },
   );
 
   // 🖥 Claude background sessions (agent view, `claude agents --json`): a global list, not per project.

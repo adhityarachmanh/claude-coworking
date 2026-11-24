@@ -137,7 +137,7 @@ function pluginsHtml() {
   return `<h3 class="ext-h">Terpasang</h3>${installed}
     <h3 class="ext-h">Marketplace terdaftar <small class="muted">${ext.marketplaces?.length ?? 0}</small></h3>
     ${marketplaces ? `<ul class="ext-list">${marketplaces}</ul>` : '<p class="muted small">Memuat marketplace…</p>'}
-    ${local ? `<div class="acct-actions ext-mp-add"><input id="ext-mp-source" maxlength="500" placeholder="owner/repo atau https://…/marketplace.json" aria-label="Sumber marketplace baru" autocomplete="off" spellcheck="false" /><button type="button" class="ghost" data-mp-add>＋ Tambah marketplace</button></div>` : ''}
+    ${local ? `<div class="acct-actions ext-mp-add"><input id="ext-mp-source" maxlength="500" placeholder="owner/repo atau https://…/marketplace.json" aria-label="Sumber marketplace baru" autocomplete="off" spellcheck="false" /><button type="button" class="ghost" data-mp-add>＋ Tambah marketplace</button><button type="button" class="ghost" data-mp-prune>🧹 Bersihkan dependensi</button></div>` : ''}
     <h3 class="ext-h">Katalog plugin <small class="muted">${p.available.length} plugin</small></h3>
     <input id="ext-filter" type="search" value="${escapeHtml(ext.filter)}" placeholder="Cari plugin: github, sentry, test, review…" aria-label="Cari plugin" autocomplete="off" />
     <ul class="ext-list">${list
@@ -170,6 +170,22 @@ async function openPluginConfig(id) {
     toast(err.message, 'warn');
   }
   render();
+}
+
+/** 🧹 Preview then remove auto-installed plugin dependencies no installed plugin needs anymore. */
+async function prunePlugins() {
+  try {
+    const preview = await api('/api/claude/plugins/prune', {});
+    const text = String(preview.text ?? '').trim();
+    if (/nothing to prune/i.test(text) || !text) return toast('Tidak ada dependensi plugin yang perlu dibersihkan.', 'ok');
+    if (!window.confirm(`Hapus dependensi plugin yang tidak dipakai lagi?\n\n${text.slice(0, 1500)}`)) return;
+    await api('/api/claude/plugins/prune', { confirm: true });
+    ext.plugins = null;
+    toast('Dependensi plugin dibersihkan.', 'ok');
+    load(true);
+  } catch (err) {
+    toast(err.message, 'warn');
+  }
 }
 
 /** 🏪 add / remove / update one marketplace; the returned list replaces the rendered one. */
@@ -326,6 +342,7 @@ export function initExtensions() {
   $('#ext-body').addEventListener('click', async (e) => {
     const t = e.target;
     if (t.closest('[data-mp-add]')) return marketplaceAct('add');
+    if (t.closest('[data-mp-prune]')) return prunePlugins();
     const mpUpdate = t.closest('[data-mp-update]');
     if (mpUpdate) return marketplaceAct('update', { name: mpUpdate.dataset.mpUpdate });
     const mpRemove = t.closest('[data-mp-remove]');

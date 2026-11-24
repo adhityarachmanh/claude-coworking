@@ -134,6 +134,8 @@ if (args[0] === 'plugin') {
         unconfigured: ['mode'],
       }),
     );
+  } else if (args[1] === 'prune') {
+    console.log(args.includes('-y') ? 'Removed 1 auto-installed plugin: helper@official' : 'helper@official\n(dry run — nothing removed)');
   } else if (args[1] === 'install') {
     const accepted = args.includes('--accept-command');
     if (id === 'risky@community' && !accepted) {
