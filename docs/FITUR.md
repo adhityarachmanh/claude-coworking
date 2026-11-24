@@ -220,7 +220,9 @@ Siapa yang mengerjakan setiap langkah (file, perintah shell, MCP, skill, tipe su
 
 Monitor tiap meja menunjukkan jenis kerja (kode, terminal, test, dokumen, desain, database, CI/CD, …). Saat idle, tim ngopi, duduk di sofa, atau ngobrol.
 
-**💻 Mode Terminal** (tombol di bawah kantor, di samping 🧠 Mode Otak; diingat per browser): kantor menjadi dinding layar terminal ala hacker, **satu panel per role yang bekerja di sesi ini**. Isinya bukan animasi karangan: setiap baris adalah baris chat yang asli, di panel role yang mengerjakannya.
+**🎛 Mode tampilan** (tombol **🎛 Mode** di bawah kantor → dialog dengan empat pilihan, diingat per browser): 🏢 Kantor, 🧠 Otak, 💻 Terminal, dan 🛰 Mission Control. Semuanya menampilkan pekerjaan tim yang sama dari data asli project.
+
+**💻 Mode Terminal**: kantor menjadi dinding layar terminal ala hacker, **satu panel per role yang bekerja di sesi ini**. Isinya bukan animasi karangan: setiap baris adalah baris chat yang asli, di panel role yang mengerjakannya.
 
 | Panel | Isi |
 |---|---|
@@ -229,7 +231,21 @@ Monitor tiap meja menunjukkan jenis kerja (kode, terminal, test, dokumen, desain
 | Role lain | Tugas yang diterima (`⇠ PM: …`), perintah beserta output-nya (live saat masih berjalan), edit sebagai diff (`-` merah / `+` hijau), file yang dibaca/dicari, hitungan test `✔N ✖N`, laporan balik (`✔ laporan ke PM`) |
 | Izin | `⚠ ACCESS REQUEST ▸ …` dengan bingkai kuning berdenyut |
 
-Delegasi berjalan sebagai paket bit dari panel ke panel; kegagalan membuat panel bergetar merah. Panel role yang menganggur meredup; role tanpa kerja tercatat di baris *standby*. Klik panel = sama seperti klik neuron di Mode Otak (kartu izin, ⧗ tugas latar, atau tab Aktivitas). Hujan karakter di latar hanya dekorasi. **🎨 Tema kantor** (⚙): Kantor, Halloween, Natal, Lebaran, 17 Agustus (disimpan per browser).
+Delegasi berjalan sebagai paket bit dari panel ke panel; kegagalan membuat panel bergetar merah. Panel role yang menganggur meredup; role tanpa kerja tercatat di baris *standby*. Klik panel = sama seperti klik neuron di Mode Otak (kartu izin, ⧗ tugas latar, atau tab Aktivitas). Hujan karakter di latar hanya dekorasi.
+
+**🛰 Mission Control**: misi = semua pekerjaan sejak prompt terakhir, ditampilkan sebagai dasbor ala NASA. Semua angka dihitung dari baris chat, event kantor, dan status project; tidak ada yang dikarang.
+
+| Bagian | Isi |
+|---|---|
+| Bar atas | Project, fase misi (**GO** / **HOLD** saat ada izin menunggu / **MISI SELESAI**), prompt, model + effort, jam misi `T+` |
+| Stasiun | Satu kartu per role: **GO** (bekerja), **HOLD** (menunggu izin), **✖** (langkah gagal / test merah), **✔ selesai**, **STBY**; langkah terakhirnya dan grafik aktivitas sepanjang misi |
+| Telemetri | Konteks (token), biaya dan token keluar giliran misi ini, jumlah langkah dan delegasi |
+| Radar tim | Lead di pusat; role yang aktif dengan garis tugas, lingkaran kuning untuk yang menunggu izin; meteran konteks dan peringatan **HOLD** yang bisa diklik untuk menjawab |
+| CAPCOM | Log komunikasi bertanda waktu: prompt, brief, pembagian tugas, laporan balik, izin, kegagalan |
+| Ground Control | Status CI GitHub push terakhir dan mode izin |
+| Timeline | Siapa bekerja kapan (perkiraan dari waktu baris chat; langkah yang masih berjalan sampai "sekarang") |
+
+Klik stasiun, titik radar, atau peringatan HOLD = sama seperti klik neuron di Mode Otak. **🎨 Tema kantor** (⚙): Kantor, Halloween, Natal, Lebaran, 17 Agustus (disimpan per browser).
 
 ## Project & dashboard
 

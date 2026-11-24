@@ -3,6 +3,7 @@ import { Scene } from '../office/scene.js';
 import { Stage } from '../office/stage.js';
 import { Brain } from '../office/brain.js';
 import { Terminal } from '../office/terminal.js';
+import { Mission } from '../office/mission.js';
 import { $ } from './dom.js';
 import { state } from './state.js';
 
@@ -12,6 +13,8 @@ export const stage = new Stage($('#stage'));
 export const brain = new Brain($('#stage'));
 // 💻 Mode Terminal: one hacker terminal per role, every line a real chat row (office/terminal.js)
 export const terminal = new Terminal($('#stage'));
+// 🛰 Mission Control: the current mission as a NASA-style dashboard (office/mission.js)
+export const mission = new Mission($('#stage'));
 
 export function sceneFor(id) {
   let scene = scenes.get(id);

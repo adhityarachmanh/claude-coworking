@@ -75,8 +75,7 @@
         </div>
         <!-- Office controls sit under the stage instead of floating over the pixel art. -->
         <div class="office-tools">
-          <button id="view-mode" class="view-mode" type="button" aria-pressed="false" title="Ganti tampilan: kantor pixel ↔ jaringan otak AI">🧠 Mode Otak</button>
-          <button id="view-terminal" class="view-mode" type="button" aria-pressed="false" title="Ganti tampilan: kantor pixel ↔ layar terminal tiap role (isi asli dari chat)">💻 Terminal</button>
+          <button id="view-mode" class="view-mode" type="button" aria-haspopup="dialog" title="Pilih tampilan kantor: Kantor, Otak, Terminal, atau Mission Control">🎛 Mode: Kantor ▾</button>
           <!-- Laptop: the people under the office can be folded away (remembered per browser, features/team.js) -->
           <button id="team-toggle" class="team-toggle" type="button" aria-expanded="true" aria-controls="team"><span>👥 Karyawan</span><small id="team-toggle-sum"></small><span class="team-toggle-chev" aria-hidden="true">▾</span></button>
         </div>
@@ -441,6 +440,20 @@
             <button class="primary">Simpan</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- 🎛 Mode tampilan (features/view-mode.js): which view of the team the stage shows -->
+    <div id="view-modal" class="modal" hidden>
+      <div class="modal-card view-card" role="dialog" aria-modal="true" aria-labelledby="view-title">
+        <div class="modal-head"><b id="view-title">🎛 Mode tampilan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Semua mode menampilkan pekerjaan tim yang sama, dari data asli project ini. Pilihan diingat di browser ini.</p>
+        <div class="view-options">
+          <button type="button" class="view-opt" data-view="office" aria-pressed="false"><span class="view-ico" aria-hidden="true">🏢</span><b>Kantor</b><small>Kantor pixel-art: karyawan berjalan, mengetik, rapat, dan melapor.</small></button>
+          <button type="button" class="view-opt" data-view="brain" aria-pressed="false"><span class="view-ico" aria-hidden="true">🧠</span><b>Otak</b><small>Jaringan saraf AI: Lead di tengah, sinyal mengalir ke role yang bekerja.</small></button>
+          <button type="button" class="view-opt" data-view="terminal" aria-pressed="false"><span class="view-ico" aria-hidden="true">💻</span><b>Terminal</b><small>Layar hacker per role: perintah, output live, diff, test, izin.</small></button>
+          <button type="button" class="view-opt" data-view="mission" aria-pressed="false"><span class="view-ico" aria-hidden="true">🛰</span><b>Mission Control</b><small>Dasbor misi: stasiun GO/HOLD, telemetri, radar, log CAPCOM, timeline.</small></button>
+        </div>
       </div>
     </div>
 

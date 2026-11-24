@@ -444,7 +444,9 @@ for (const vp of PHONES) {
       assert.equal(folded.saved, '1', 'pilihan diingat per perangkat');
       assert.equal(await page.eval(horizontalOverflow), null, 'tanpa overflow saat ilustrasi penuh');
       // Otak memakai stage yang sama: kanvasnya ikut membesar.
+      // 🎛 Mode opens a dialog; the brain card switches the view
       await page.click('#view-mode');
+      await page.click('#view-modal [data-view="brain"]');
       await page.waitFor(() => document.querySelector('#stage').classList.contains('brain-mode'), { timeoutMs: 3000, message: 'mode otak' });
       const brain = await page.eval(() => {
         const stage = document.querySelector('#stage').getBoundingClientRect();
@@ -455,6 +457,7 @@ for (const vp of PHONES) {
       assert.ok(Math.abs(brain.canvasH - brain.stage) <= 2, `kanvas otak setinggi stage (${brain.canvasH} vs ${brain.stage})`);
       // Back to the office and to the list: stage returns to its aspect size.
       await page.click('#view-mode');
+      await page.click('#view-modal [data-view="office"]');
       await page.click('#team-toggle');
       await page.waitFor(() => document.querySelector('#team').getClientRects().length > 0, { timeoutMs: 2000, message: 'daftar kembali' });
       const back = await page.eval(() => Math.round(document.querySelector('#stage').getBoundingClientRect().height));
@@ -536,7 +539,7 @@ for (const vp of PHONES) {
       if (await page.eval(() => document.querySelector('.office').classList.contains('team-hidden'))) await page.click('#team-toggle');
       await page.waitFor(() => document.querySelector('#team .member'), { timeoutMs: 3000, message: 'kartu tim tampil' });
       const a = await page.eval(auditView, 'office');
-      assert.deepEqual(a.chrome, ['dash-bar', 'view-mode', 'view-terminal', 'team-toggle'], `kontrol view: ${a.chrome.join(', ')}`);
+      assert.deepEqual(a.chrome, ['dash-bar', 'view-mode', 'team-toggle'], `kontrol view: ${a.chrome.join(', ')}`);
       const cards = await page.eval(() => [...document.querySelectorAll('#team .member')].map((m) => Math.round(m.getBoundingClientRect().height)));
       assert.ok(cards.length > 0 && cards.every((h) => h >= 44), `tinggi kartu ${cards.join(',')}`);
       const stage = await page.eval(() => {

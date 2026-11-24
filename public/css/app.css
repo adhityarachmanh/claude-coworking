@@ -3058,8 +3058,19 @@ body.read-only #composer-hint { color: var(--ask); }
 .terminal-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; border-radius: var(--r-xl); box-shadow: 0 18px 50px #00000080, 0 0 0 1px #2bff8a33; cursor: pointer; }
 .stage.terminal-mode .terminal-canvas { display: block; }
 .stage.terminal-mode > canvas:not(.terminal-canvas), .stage.terminal-mode > .overlay { visibility: hidden; }
-#view-terminal { border-color: #2bff8a55; background: #031a0ecc; color: #c8ffdc; }
-#view-terminal[aria-pressed='true'] { background: #0a3a1fe6; }
+/* 🛰 Mission Control (office/mission.js) */
+.mission-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; border-radius: var(--r-xl); box-shadow: 0 18px 50px #00000080, 0 0 0 1px #2a5a9955; cursor: pointer; }
+.stage.mission-mode .mission-canvas { display: block; }
+.stage.mission-mode > canvas:not(.mission-canvas), .stage.mission-mode > .overlay { visibility: hidden; }
+/* 🎛 Mode tampilan dialog (features/view-mode.js) */
+.view-card { width: min(640px, 96vw); }
+.view-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.view-opt { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; row-gap: 2px; align-items: center; text-align: left; padding: 12px; min-height: 44px; border-radius: 12px; border: 1px solid var(--line, #8884); background: var(--panel-2, #8881); color: inherit; cursor: pointer; }
+.view-opt .view-ico { grid-row: span 2; font-size: 26px; }
+.view-opt small { color: var(--muted, #999); line-height: 1.35; }
+.view-opt:hover { border-color: #8fa0ff; }
+.view-opt[aria-pressed='true'] { border-color: #8fa0ff; box-shadow: 0 0 0 2px #8fa0ff55 inset; }
+@media (max-width: 520px) { .view-options { grid-template-columns: 1fr; } }
 .view-mode { padding: 4px 10px; border-radius: var(--r-pill); border: 1px solid #8fa0ff55; background: #0b0f2acc; color: #dfe4ff; font-size: var(--fs-xs); cursor: pointer; }
 .view-mode:hover { border-color: #a9b6ff; }
 .view-mode[aria-pressed='true'] { background: #1b2150e6; }

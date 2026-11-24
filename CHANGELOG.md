@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🎛 Satu tombol Mode.** Tombol 🧠 Mode Otak dan 💻 Terminal diganti satu tombol **🎛 Mode** yang membuka dialog berisi empat pilihan tampilan: 🏢 Kantor, 🧠 Otak, 💻 Terminal, 🛰 Mission Control. Pilihan tetap diingat per browser.
+- **🛰 Mission Control.** Tampilan keempat: misi sejak prompt terakhir sebagai dasbor ala NASA — stasiun per role (GO / HOLD / ✖ / selesai / STBY) dengan grafik aktivitas, telemetri (konteks, biaya, langkah), radar tim dengan Lead di pusat, log CAPCOM siapa memberi tugas ke siapa, status CI, dan timeline siapa bekerja kapan. Semua dari data asli project, tanpa token tambahan.
+
 ## 1.8.0
 
 - **💻 Mode Terminal.** Tampilan ketiga untuk kantor (tombol **💻 Terminal** di samping 🧠 Mode Otak): satu layar terminal ala hacker per role yang bekerja. Setiap baris berasal dari chat yang asli — prompt di layar Lead, papan task dan pembagian tugas di layar PM, perintah dengan output live, edit sebagai diff, hitungan test, dan permintaan izin — di layar role yang mengerjakannya. Delegasi tampil sebagai paket data antarpanel, kegagalan membuat panel bergetar merah. Tanpa token tambahan.

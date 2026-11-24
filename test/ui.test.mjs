@@ -9365,12 +9365,12 @@ for (const vp of VIEWPORTS) {
           };
           const plaque = { frame: sum(549, 9), wall: sum(545, 9), panel: sum(552, 30) };
           // 🧠 Mode Otak: the thinking core takes the same logo (the Stage is not drawn in that mode).
-          document.querySelector('#view-mode').click();
+          (await import('/js/features/view-mode.js')).setView('brain');
           await nextFrame();
           const brainLogo = brain.on ? { file: brain.logo?.file ?? null, label: brain.logo?.label ?? null } : null;
           return { first, second, unknown, active, plaque, brainLogo };
         } finally {
-          if (brain.on) document.querySelector('#view-mode').click(); // later tests want the pixel office
+          if (brain.on) (await import('/js/features/view-mode.js')).setView('office'); // later tests want the pixel office
           if (real) stage.setScene(real);
         }
       });
