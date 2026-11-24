@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.8.0
 
 - **💻 Mode Terminal.** Tampilan ketiga untuk kantor (tombol **💻 Terminal** di samping 🧠 Mode Otak): satu layar terminal ala hacker per role yang bekerja. Setiap baris berasal dari chat yang asli — prompt di layar Lead, papan task dan pembagian tugas di layar PM, perintah dengan output live, edit sebagai diff, hitungan test, dan permintaan izin — di layar role yang mengerjakannya. Delegasi tampil sebagai paket data antarpanel, kegagalan membuat panel bergetar merah. Tanpa token tambahan.
 
