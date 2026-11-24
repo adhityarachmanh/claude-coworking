@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.7.0
 
 - **🧩 Plugin satu pintu untuk dua mesin.** Dialog **Ekstensi** mengikuti mesin project: Claude Code menampilkan marketplace (pasang, aktif/nonaktif, hapus) beserta Agents/Hooks; OpenCode menampilkan pengelola plugin npm/URL Git (tambah, hapus, update, cek update, update semua). Bisa dibuka dari ⋯ → **🧩 Plugin & ekstensi…**, ⚙ → **🧩 Plugin**, atau `/plugin`. Blok plugin OpenCode yang lama di Kompatibilitas diganti satu pintu ini.
 
