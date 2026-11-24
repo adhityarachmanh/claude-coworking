@@ -2,18 +2,16 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.11.0
 
 - **🛡️ Stabilitas: crash tidak lagi senyap.** `uncaughtException` dicatat ke `data/server.log` (stack lengkap), state disimpan, lalu proses keluar agar penjaga Task Scheduler/auto-start menyalakannya lagi; `unhandledRejection` dicatat tanpa mematikan kantor. Test unit yang lama basi (bentuk MCP `add-json` dan agent V2) diperbarui supaya regresi benar-benar terdeteksi.
 - **🧹 Bersihkan dependensi plugin.** Dialog Ekstensi punya **Bersihkan dependensi** (`claude plugin prune`): pratinjau `--dry-run` ditampilkan dulu, lalu `-y` setelah kamu setuju; dependensi otomatis yang tidak dipakai plugin mana pun dihapus.
 - **🔑 Login SSO.** Dialog 👤 Akun kini punya tiga jalur login in-app: **Claude.ai** (langganan), **Console/API**, dan **SSO** (`claude auth login --sso`). Alur kode-tempel dan logout tetap sama.
 - **Debug port bentrok & Tailscale.** Saat server dijalankan ketika Adhitron lain masih memakai port yang sama (mis. debug dari VS Code dengan 4317), server kini menjelaskan penyebabnya — hentikan instance itu atau pakai `OFFICE_PORT` lain — bukan mati dengan stack `EADDRINUSE`. Dokumentasi debugging diperbarui: HTTP hanya `127.0.0.1`, listener LAN/Tailscale muncul saat akses HP hidup, HTTPS `:4318` butuh sertifikat, dan env `OFFICE_APP_DIR`/`OFFICE_MANAGED` yang diwarisi harus dihapus untuk debug dari repo.
-
 - **▶ Mulai sesi latar Claude.** Panel Sesi latar Claude kini punya **＋ Sesi latar baru**: prompt (maks 4000) dan nama opsional, dijalankan `claude --bg` di folder project terpilih. Sesi muncul di daftar setelah daemon mendaftarkannya (auto-refresh); tetap memakai kuota.
 - **📝 Instruksi sistem tambahan per project.** ⚙ Flag Claude → **Instruksi sistem tambahan** (`--append-system-prompt`, maks 4000) digabung dengan prompt tim (`--append-system-prompt-file`) saat proses Claude dimulai; perubahan berlaku pada pesan berikutnya.
 - **📊 Lampiran Excel (.xlsx).** Lampirkan file Excel lewat 📎, drag & drop, atau paste: server membacanya tanpa dependensi baru (ZIP+XML), mengubah tiap sheet menjadi teks tab-separated (nama sheet, jumlah baris/kolom; maks 10 sheet, 1000 baris, 100 kolom), lalu mengirimnya sebagai lampiran teks. Batas 10 MB per file dan 200 KB isi; `.xls` lama diarahkan ke `.xlsx`/`.csv`.
 - **📋 Paste sel Excel.** Menyalin sel dari Excel lalu paste ke kotak pesan kini menjadi **tabel Markdown** (header + baris, maks 100×30, pipa di-escape); daftar satu kolom tetap teks biasa.
-
 - **🧩 Detail & opsi plugin.** Di dialog Ekstensi, setiap plugin terpasang punya **ℹ Detail** (inventaris komponen + perkiraan biaya token dari `claude plugin details`) dan, bila punya `userConfig`, **⚙ Opsi** untuk melihat/mengisi opsinya (`claude plugin configure`). Nilai sensitif tidak pernah ditampilkan; nilai dikirim lewat stdin, bukan argumen.
 - **🖥 Status daemon sesi latar.** Panel Sesi latar Claude kini menampilkan status daemon (`claude daemon status`) di atas daftar.
 - **🖥 Sesi latar Claude.** Menu ⋯ → **Sesi latar Claude** menampilkan sesi daemon Claude Code (`claude agents --json`, lintas project): state, folder, waktu mulai, alasan menunggu. Dari laptop: **Hentikan** (`claude stop`), **Mulai ulang** (`claude respawn`), **Hapus** (`claude rm`), dan **Log** (`claude logs`). Lampirkan/membalas tetap lewat terminal karena agent view adalah TUI.
