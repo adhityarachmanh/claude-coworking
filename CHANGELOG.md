@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.10.0
 
 - **🎼 Mode Orkestra.** Pilihan kelima di dialog 🎛 Mode: Lead sebagai konduktor, PM sebagai concertmaster dengan partitur (papan task), setiap role memainkan instrumennya dan setiap langkah nyata menjadi not. Langkah gagal mewarnai pemain merah, izin yang menunggu menjadi fermata, dan partitur misi di bawah panggung mencatat siapa bekerja kapan. **Musik lembut opsional** (default mati, 🔇/🔉/🔊): selalu harmonis — hanya nada dari akor yang sedang berjalan, tepat di ketukan, dibatasi per ketukan; kegagalan menjadi suasana minor, bukan nada sumbang.
 
