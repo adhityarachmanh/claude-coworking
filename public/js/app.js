@@ -7,7 +7,7 @@
 // - The init*() calls below run in a fixed order; some listeners depend on it (e.g. the modal Tab trap
 //   must be registered before the composer's Shift+Tab handler, which checks defaultPrevented).
 // - State shared across modules lives in mutable objects (state, changes, phone, …), never `export let`.
-import { brain, mission, scenes, stage, terminal } from './core/scenes.js';
+import { brain, mission, orchestra, scenes, stage, terminal } from './core/scenes.js';
 import { initViewMode } from './features/view-mode.js';
 import { initAppUpdate } from './features/app-update.js';
 import { initHealth } from './features/health.js';
@@ -208,6 +208,7 @@ function loop(t) {
       if (brain.on) brain.frame(t, stage.scene); // 🧠 Mode Otak replaces the pixel office while it is on
       else if (terminal.on) terminal.frame(t, stage.scene); // 💻 Mode Terminal likewise
       else if (mission.on) mission.frame(t, stage.scene); // 🛰 Mission Control likewise
+      else if (orchestra.on) orchestra.frame(t, stage.scene); // 🎼 Mode Orkestra likewise
       else stage.frame(t);
     }
     if (t - lastTeam > 500) {

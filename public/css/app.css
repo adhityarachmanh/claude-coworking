@@ -3062,6 +3062,10 @@ body.read-only #composer-hint { color: var(--ask); }
 .mission-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; border-radius: var(--r-xl); box-shadow: 0 18px 50px #00000080, 0 0 0 1px #2a5a9955; cursor: pointer; }
 .stage.mission-mode .mission-canvas { display: block; }
 .stage.mission-mode > canvas:not(.mission-canvas), .stage.mission-mode > .overlay { visibility: hidden; }
+/* 🎼 Mode Orkestra (office/orchestra.js) */
+.orchestra-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; border-radius: var(--r-xl); box-shadow: 0 18px 50px #00000080, 0 0 0 1px #ffb34733; cursor: pointer; }
+.stage.orchestra-mode .orchestra-canvas { display: block; }
+.stage.orchestra-mode > canvas:not(.orchestra-canvas), .stage.orchestra-mode > .overlay { visibility: hidden; }
 /* 🎛 Mode tampilan dialog (features/view-mode.js) */
 .view-card { width: min(640px, 96vw); }
 .view-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }

@@ -38,7 +38,7 @@ import { setLaptopOnly, setReadOnlyApi } from './api.js';
 import { $ } from './dom.js';
 import { toast } from './api.js';
 import { startStreamShare } from './stream-share.js';
-import { brain, scenes, terminal } from './scenes.js';
+import { brain, orchestra, scenes, terminal } from './scenes.js';
 import { DEMO_ID, projectName, state } from './state.js';
 
 let share = null;
@@ -166,6 +166,7 @@ const handlers = {
     if (live && evt.project === state.active) {
       brain.event(evt); // 🧠 Mode Otak: signals and pulses
       terminal.event(evt); // 💻 Mode Terminal: packets between panels, glitches
+      orchestra.event(evt); // 🎼 Mode Orkestra: notes on the beat, mood changes
     }
     if (evt.project === state.active) {
       appendActivity(evt, true);

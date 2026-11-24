@@ -220,7 +220,7 @@ Siapa yang mengerjakan setiap langkah (file, perintah shell, MCP, skill, tipe su
 
 Monitor tiap meja menunjukkan jenis kerja (kode, terminal, test, dokumen, desain, database, CI/CD, …). Saat idle, tim ngopi, duduk di sofa, atau ngobrol.
 
-**🎛 Mode tampilan** (tombol **🎛 Mode** di bawah kantor → dialog dengan empat pilihan, diingat per browser): 🏢 Kantor, 🧠 Otak, 💻 Terminal, dan 🛰 Mission Control. Semuanya menampilkan pekerjaan tim yang sama dari data asli project.
+**🎛 Mode tampilan** (tombol **🎛 Mode** di bawah kantor → dialog dengan lima pilihan, diingat per browser): 🏢 Kantor, 🧠 Otak, 💻 Terminal, 🛰 Mission Control, dan 🎼 Orkestra. Semuanya menampilkan pekerjaan tim yang sama dari data asli project.
 
 **💻 Mode Terminal**: kantor menjadi dinding layar terminal ala hacker, **satu panel per role yang bekerja di sesi ini**. Isinya bukan animasi karangan: setiap baris adalah baris chat yang asli, di panel role yang mengerjakannya.
 
@@ -245,7 +245,11 @@ Delegasi berjalan sebagai paket bit dari panel ke panel; kegagalan membuat panel
 | Ground Control | Status CI GitHub push terakhir dan mode izin |
 | Timeline | Siapa bekerja kapan (perkiraan dari waktu baris chat; langkah yang masih berjalan sampai "sekarang") |
 
-Klik stasiun, titik radar, atau peringatan HOLD = sama seperti klik neuron di Mode Otak. **🎨 Tema kantor** (⚙): Kantor, Halloween, Natal, Lebaran, 17 Agustus (disimpan per browser).
+Klik stasiun, titik radar, atau peringatan HOLD = sama seperti klik neuron di Mode Otak.
+
+**🎼 Mode Orkestra**: tim sebagai orkestra di panggung konser. Lead adalah **konduktor** di podium (tongkat mengayun selama giliran berjalan, turun saat selesai), PM adalah **concertmaster** yang memegang partitur (papan task) dan memberi aba-aba, setiap role memainkan instrumennya (Backend cello, Frontend biola, QA timpani, …). Setiap langkah nyata = satu not yang naik dari pemainnya; pemain yang bekerja disorot lampu, yang standby redup. Langkah gagal mewarnai pemain merah (♭), izin yang menunggu = **fermata** (seluruh orkestra menahan, pemain mengangkat tangan). Di bawah panggung **partitur misi**: satu paranada per role, not di waktu langkahnya, ✖ = langkah gagal.
+
+**Suara (opsional, default mati)**: tombol di kanan atas panggung berganti 🔇 mati → 🔉 pelan → 🔊 sedang (diingat per browser). Dibuat langsung di browser (WebAudio, tanpa file audio) dan dirancang selalu enak didengar: setiap nada adalah nada dari akor yang sedang berjalan (progresi pelan C–Am–F–G), dibunyikan tepat di ketukan (84 BPM), paling banyak 3 nada per ketukan, dengan bunyi lembut di atas iringan akor yang tenang. Kegagalan tidak dibunyikan sumbang: musik pindah ke suasana minor sebentar; test lulus dan akhir giliran terdengar cerah; izin yang menunggu menahan musik. **🎨 Tema kantor** (⚙): Kantor, Halloween, Natal, Lebaran, 17 Agustus (disimpan per browser).
 
 ## Project & dashboard
 

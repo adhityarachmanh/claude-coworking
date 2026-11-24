@@ -1,24 +1,26 @@
 // 🎛 Mode tampilan: which view of the team the stage shows — 🏢 Kantor (pixel office), 🧠 Otak (office/brain.js),
-// 💻 Terminal (office/terminal.js) or 🛰 Mission Control (office/mission.js). One button opens a dialog with the four;
+// 💻 Terminal (office/terminal.js), 🛰 Mission Control (office/mission.js) or 🎼 Orkestra (office/orchestra.js).
+// One button opens a dialog with the five;
 // the choice is remembered per browser.
 import { $ } from '../core/dom.js';
-import { brain, mission, terminal } from '../core/scenes.js';
+import { brain, mission, orchestra, terminal } from '../core/scenes.js';
 import { state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
 
 const KEY = 'office.viewMode';
-export const VIEW_MODES = ['office', 'brain', 'terminal', 'mission'];
-const LABEL = { office: '🏢 Kantor', brain: '🧠 Otak', terminal: '💻 Terminal', mission: '🛰 Mission Control' };
+export const VIEW_MODES = ['office', 'brain', 'terminal', 'mission', 'orchestra'];
+const LABEL = { office: '🏢 Kantor', brain: '🧠 Otak', terminal: '💻 Terminal', mission: '🛰 Mission Control', orchestra: '🎼 Orkestra' };
 
 /** The view on screen now. */
-export const currentView = () => (brain.on ? 'brain' : terminal.on ? 'terminal' : mission.on ? 'mission' : 'office');
+export const currentView = () => (brain.on ? 'brain' : terminal.on ? 'terminal' : mission.on ? 'mission' : orchestra.on ? 'orchestra' : 'office');
 
-/** @param {'office'|'brain'|'terminal'|'mission'} mode */
+/** @param {'office'|'brain'|'terminal'|'mission'|'orchestra'} mode */
 function apply(mode) {
   const on = mode === 'brain';
   brain.setOn(on);
   terminal.setOn(mode === 'terminal');
   mission.setOn(mode === 'mission');
+  orchestra.setOn(mode === 'orchestra');
   document.querySelector('.office')?.classList.toggle('brain-on', on); // the people grid turns into orbs too
   document.body.classList.toggle('brain-on', on); // …and every other avatar (chat, edit-names, Kelola tim)
   const btn = $('#view-mode');
