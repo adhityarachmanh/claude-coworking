@@ -276,8 +276,11 @@ Lampirkan lewat 📎, drag & drop, atau paste.
 | 🖼 Gambar PNG/JPEG/GIF/WebP | ±3,75 MB per file (5 MB base64), maks 8000 px per sisi | Gambar |
 | 📕 PDF | 5 MB | Dokumen (Claude membaca teks dan gambarnya; OpenCode menerimanya sebagai lampiran PDF) |
 | 📄 Teks: log, `.txt`/`.md`/`.json`/`.csv`/`.yaml`/`.sql`, source code, `Dockerfile`, … | 200 KB per file, 500 KB total; UTF-8 atau UTF-16 ber-BOM | Teks dalam `<attachment>` dengan catatan "bukan instruksi" |
+| 📊 Excel `.xlsx` | 10 MB per file; isi yang dikonversi maks 200 KB | Teks per sheet (tab-separated, nama sheet + jumlah baris/kolom); tanggal bisa berupa angka serial. `.xls` lama ditolak — simpan `.xlsx`/`.csv` |
 
 Maks **10 lampiran / 20 MB** per pesan. Jenis lain (zip, exe, docx, …) ditolak; server memeriksa ulang jenis dari isi file. File teks yang lebih besar: taruh di project lalu sebut dengan `@file`.
+
+- **📋 Copy sel dari Excel** lalu paste ke kotak pesan: tabel tab-separated diubah menjadi **tabel Markdown** (maks 100 baris × 30 kolom) supaya baris/kolom tetap terbaca; daftar satu kolom tetap teks biasa. Menyalin **file** `.xlsx` dari Explorer lalu paste juga diterima sebagai lampiran 📊.
 
 - **↻ Ulangi** dan **Edit** ikut membawa lampiran 5 prompt terakhir per project (di memori browser saja; hilang saat halaman dimuat ulang). Chip draf tetap milik project-nya saat pindah project.
 - **📋 Antrian ikut membawa lampiran**: file disimpan di `data/queue-files/` (bukan di `state.json`), ditampilkan sebagai chip di item, dan dikirim bersama prompt saat item berjalan. File dihapus saat item dihapus, daftar selesai dibersihkan, atau project dilupakan. Batas jenis/ukuran sama dengan lampiran chat.

@@ -5,6 +5,7 @@
 //   image → image content block (PNG/JPEG/GIF/WebP, the type comes from the file's magic bytes)
 //   pdf   → document content block (base64 PDF; Claude Code's stream-json input passes it to the API as is)
 //   text  → text content block `<attachment name="…" size="…">…</attachment>` (logs, source, md/json/csv/…)
+//   spreadsheet → .xlsx read as text on the server (src/xlsx.js); the browser only checks the ZIP header
 // Anything else is refused. The kind is decided by the extension first (Windows reports `.ts` as video/mp2t),
 // then the browser's MIME; the content must then really be that kind (magic bytes / valid UTF-8 without NUL).
 
@@ -14,14 +15,18 @@ export const ATTACH_LIMITS = Object.freeze({
   imageBytes: Math.floor((5 * 1024 * 1024 * 3) / 4),
   imagePixels: 8000, // the API refuses images wider or taller than this
   pdfBytes: 5 * 1024 * 1024,
+  // A workbook is converted to text before it is sent; 10 MB is already far beyond any chat attachment.
+  spreadsheetBytes: 10 * 1024 * 1024,
   textBytes: 200 * 1024,
   textTotalBytes: 500 * 1024,
   totalBytes: 20 * 1024 * 1024, // base64 in JSON stays under the server's 30 MB body limit
 });
 
-export const ATTACH_ICONS = Object.freeze({ image: '🖼', pdf: '📕', text: '📄' });
+export const ATTACH_ICONS = Object.freeze({ image: '🖼', pdf: '📕', text: '📄', spreadsheet: '📊' });
 
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+const SPREADSHEET_EXT = new Set(['xlsx']);
+const SPREADSHEET_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const TEXT_EXT = new Set([
   // plain text, logs, docs
   'txt', 'text', 'log', 'out', 'err', 'md', 'markdown', 'mdx', 'rst', 'adoc', 'tex', 'srt', 'vtt',
@@ -47,7 +52,7 @@ const TEXT_MIME = /^(text\/|application\/(json|ld\+json|xml|x-yaml|yaml|sql|java
 
 /** File input `accept`: what the 📎 picker offers (drop/paste can bring anything; it is checked the same way). */
 export const ATTACH_ACCEPT = [
-  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', '.pdf', 'text/*',
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf', '.pdf', '.xlsx', SPREADSHEET_MIME, 'text/*',
   ...[...TEXT_EXT].map((e) => `.${e}`),
 ].join(',');
 
@@ -57,13 +62,14 @@ const extOf = (name) => {
   return dot > 0 ? base.slice(dot + 1) : '';
 };
 
-/** What the file claims to be (name, then MIME): 'image' | 'pdf' | 'text' | null (refused). */
+/** What the file claims to be (name, then MIME): 'image' | 'pdf' | 'text' | 'spreadsheet' | null (refused). */
 export function attachmentKind(name, mediaType = '') {
   const base = String(name ?? '').toLowerCase();
   const ext = extOf(base);
   const type = String(mediaType ?? '').toLowerCase();
   if (IMAGE_EXT.has(ext)) return 'image';
   if (ext === 'pdf') return 'pdf';
+  if (SPREADSHEET_EXT.has(ext) || type === SPREADSHEET_MIME) return 'spreadsheet';
   if (TEXT_EXT.has(ext) || TEXT_NAMES.has(base) || /\.log(\.|$)/.test(base)) return 'text'; // also app.log.1
   if (/^image\/(png|jpeg|gif|webp)$/.test(type)) return 'image';
   if (type === 'application/pdf') return 'pdf';
@@ -71,7 +77,7 @@ export function attachmentKind(name, mediaType = '') {
   return null;
 }
 
-export const maxBytes = (kind) => ({ image: ATTACH_LIMITS.imageBytes, pdf: ATTACH_LIMITS.pdfBytes, text: ATTACH_LIMITS.textBytes })[kind] ?? 0;
+export const maxBytes = (kind) => ({ image: ATTACH_LIMITS.imageBytes, pdf: ATTACH_LIMITS.pdfBytes, text: ATTACH_LIMITS.textBytes, spreadsheet: ATTACH_LIMITS.spreadsheetBytes })[kind] ?? 0;
 
 /** "12 KB", "1,5 MB" (Indonesian decimal comma). */
 export function formatSize(bytes) {
@@ -158,9 +164,16 @@ const TOO_BIG_TEXT_HINT = 'Taruh file di folder project lalu sebut dengan @file.
 export function precheckAttachment(name, mediaType, size) {
   const clean = safeName(name);
   const kind = attachmentKind(clean, mediaType);
-  if (!kind) return `${clean}: jenis file tidak didukung. Lampirkan gambar (PNG/JPEG/GIF/WebP), PDF, atau file teks (log, kode, md, json, csv, …).`;
+  if (!kind) {
+    if (extOf(clean) === 'xls') return `${clean}: file Excel lama (.xls) belum didukung. Simpan sebagai .xlsx atau .csv, lalu lampirkan lagi.`;
+    return `${clean}: jenis file tidak didukung. Lampirkan gambar (PNG/JPEG/GIF/WebP), PDF, Excel (.xlsx), atau file teks (log, kode, md, json, csv, …).`;
+  }
   if (!size) return `${clean} kosong.`;
-  if (size > maxBytes(kind)) return kind === 'text' ? `${clean} lebih dari ${formatSize(ATTACH_LIMITS.textBytes)}. ${TOO_BIG_TEXT_HINT}` : `${clean} lebih dari ${formatSize(maxBytes(kind))}.`;
+  if (size > maxBytes(kind)) {
+    if (kind === 'text') return `${clean} lebih dari ${formatSize(ATTACH_LIMITS.textBytes)}. ${TOO_BIG_TEXT_HINT}`;
+    if (kind === 'spreadsheet') return `${clean} lebih dari ${formatSize(ATTACH_LIMITS.spreadsheetBytes)}. Pecah per sheet atau simpan sebagai CSV.`;
+    return `${clean} lebih dari ${formatSize(maxBytes(kind))}.`;
+  }
   return null;
 }
 
@@ -183,6 +196,11 @@ export function inspectAttachment({ name, mediaType, bytes }) {
     return { ok: true, item: { kind, name: clean, size, mediaType: type } };
   }
   if (kind === 'pdf') return isPdf(bytes) ? { ok: true, item: { kind, name: clean, size, mediaType: 'application/pdf' } } : { ok: false, error: `${clean} bukan PDF yang valid.` };
+  if (kind === 'spreadsheet') {
+    // The real parse happens on the server (Node's zlib); here the ZIP signature is enough to refuse a renamed file.
+    const zip = bytes?.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && ((bytes[2] === 0x03 && bytes[3] === 0x04) || (bytes[2] === 0x05 && bytes[3] === 0x06));
+    return zip ? { ok: true, item: { kind, name: clean, size, mediaType: SPREADSHEET_MIME } } : { ok: false, error: `${clean} bukan file Excel (.xlsx) yang valid.` };
+  }
   const text = decodeText(bytes);
   if (text === null) return { ok: false, error: `${clean} bukan file teks (UTF-8).` };
   return { ok: true, item: { kind, name: clean, size, mediaType: 'text/plain', text } };
@@ -191,7 +209,9 @@ export function inspectAttachment({ name, mediaType, bytes }) {
 /** Limits over the whole message (count, total text, total size); `null` when fine. */
 export function checkAttachmentSet(items) {
   if (items.length > ATTACH_LIMITS.maxFiles) return `Maksimal ${ATTACH_LIMITS.maxFiles} lampiran per pesan.`;
-  const textTotal = items.filter((a) => a.kind === 'text').reduce((sum, a) => sum + a.size, 0);
+  const textTotal = items
+    .filter((a) => a.kind === 'text' || a.kind === 'spreadsheet')
+    .reduce((sum, a) => sum + (a.kind === 'spreadsheet' ? (a.text?.length ?? 0) : a.size), 0);
   if (textTotal > ATTACH_LIMITS.textTotalBytes) return `Total lampiran teks lebih dari ${formatSize(ATTACH_LIMITS.textTotalBytes)}. ${TOO_BIG_TEXT_HINT}`;
   if (items.reduce((sum, a) => sum + a.size, 0) > ATTACH_LIMITS.totalBytes) return `Total lampiran lebih dari ${formatSize(ATTACH_LIMITS.totalBytes)}.`;
   return null;

@@ -4,6 +4,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **📊 Lampiran Excel (.xlsx).** Lampirkan file Excel lewat 📎, drag & drop, atau paste: server membacanya tanpa dependensi baru (ZIP+XML), mengubah tiap sheet menjadi teks tab-separated (nama sheet, jumlah baris/kolom; maks 10 sheet, 1000 baris, 100 kolom), lalu mengirimnya sebagai lampiran teks. Batas 10 MB per file dan 200 KB isi; `.xls` lama diarahkan ke `.xlsx`/`.csv`.
+- **📋 Paste sel Excel.** Menyalin sel dari Excel lalu paste ke kotak pesan kini menjadi **tabel Markdown** (header + baris, maks 100×30, pipa di-escape); daftar satu kolom tetap teks biasa.
+
 - **🧩 Detail & opsi plugin.** Di dialog Ekstensi, setiap plugin terpasang punya **ℹ Detail** (inventaris komponen + perkiraan biaya token dari `claude plugin details`) dan, bila punya `userConfig`, **⚙ Opsi** untuk melihat/mengisi opsinya (`claude plugin configure`). Nilai sensitif tidak pernah ditampilkan; nilai dikirim lewat stdin, bukan argumen.
 - **🖥 Status daemon sesi latar.** Panel Sesi latar Claude kini menampilkan status daemon (`claude daemon status`) di atas daftar.
 - **🖥 Sesi latar Claude.** Menu ⋯ → **Sesi latar Claude** menampilkan sesi daemon Claude Code (`claude agents --json`, lintas project): state, folder, waktu mulai, alasan menunggu. Dari laptop: **Hentikan** (`claude stop`), **Mulai ulang** (`claude respawn`), **Hapus** (`claude rm`), dan **Log** (`claude logs`). Lampirkan/membalas tetap lewat terminal karena agent view adalah TUI.

@@ -3,6 +3,7 @@
 import { toast } from '../core/api.js';
 import { chipSignature, createAttachmentMemory } from '../core/attachment-memory.js';
 import { ATTACH_ACCEPT, ATTACH_ICONS, ATTACH_LIMITS, checkAttachmentSet, formatSize, inspectAttachment, precheckAttachment, safeName } from '../core/attachment-rules.js';
+import { tsvToMarkdown } from '../core/paste-table.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { state } from '../core/state.js';
 
@@ -147,6 +148,17 @@ export function addFiles(files) {
 /** Waits until dropped/picked files are read (so a quick Enter doesn't send without them). */
 export const attachmentsReady = () => reading;
 
+/** Inserts text at the caret and lets the composer react (autosize, hints, draft). */
+function insertPromptText(value) {
+  const el = $('#prompt');
+  if (!el) return;
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? start;
+  el.setRangeText(value, start, end, 'end');
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.focus();
+}
+
 export function initAttachments() {
   $('#file-input').accept = ATTACH_ACCEPT;
   $('#attachments').addEventListener('click', (e) => {
@@ -161,9 +173,20 @@ export function initAttachments() {
     e.target.value = '';
   });
   $('#prompt').addEventListener('paste', (e) => {
-    const files = [...(e.clipboardData?.files ?? [])];
+    const clipboard = e.clipboardData;
+    const files = [...(clipboard?.files ?? [])];
+    const text = clipboard?.getData('text/plain') ?? '';
+    // Cells copied from Excel: keep rows/columns as a Markdown table instead of a tab-separated wall of text.
+    if (text && /<table[\s>]/i.test(clipboard?.getData('text/html') ?? '')) {
+      const table = tsvToMarkdown(text);
+      if (table) {
+        e.preventDefault();
+        insertPromptText(`${table}\n`);
+        return;
+      }
+    }
     // Text on the clipboard stays a normal paste (a long log too; apps like Excel add an image copy of it).
-    if (!files.length || e.clipboardData.getData('text/plain')) return;
+    if (!files.length || text) return;
     e.preventDefault();
     addFiles(files);
   });

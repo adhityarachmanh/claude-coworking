@@ -2,6 +2,7 @@
 // UTF-8, size, count, totals, name) with the same rules the browser uses (public/js/core/attachment-rules.js),
 // then turned into the content blocks Claude Code's stream-json input takes.
 import { ATTACH_LIMITS, attachmentTextBlock, checkAttachmentSet, inspectAttachment } from '../public/js/core/attachment-rules.js';
+import { xlsxToText } from './xlsx.js';
 
 export class AttachmentError extends Error {
   constructor(message) {
@@ -39,6 +40,19 @@ export function readAttachments(body) {
     const bytes = Buffer.from(data, 'base64');
     const checked = inspectAttachment({ name: String(a?.name ?? ''), mediaType: String(a?.mediaType ?? ''), bytes });
     if (!checked.ok) throw new AttachmentError(checked.error);
+    if (checked.item.kind === 'spreadsheet') {
+      // 📊 The browser cannot read a workbook; the server turns it into text before Claude Code sees it.
+      let text;
+      try {
+        text = xlsxToText(bytes);
+      } catch {
+        throw new AttachmentError(`${checked.item.name}: file Excel tidak bisa dibaca. Simpan sebagai .xlsx baru atau .csv, lalu lampirkan lagi.`);
+      }
+      const textSize = Buffer.byteLength(text);
+      if (textSize > ATTACH_LIMITS.textBytes) throw new AttachmentError(`${checked.item.name}: isi Excel lebih dari 200 KB. Pecah per sheet atau simpan sebagai CSV.`);
+      // Keep kind "spreadsheet" for the chip (📊) and the transcript; contentBlocks sends it as text (it has `text`).
+      return { kind: 'spreadsheet', name: checked.item.name, size: bytes.length, mediaType: checked.item.mediaType, text };
+    }
     return checked.item.kind === 'text' ? checked.item : { ...checked.item, data };
   });
   const setError = checkAttachmentSet(items);
