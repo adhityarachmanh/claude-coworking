@@ -790,7 +790,7 @@ function loginStart({ hub, account, device, taskQueue, dataDir }, req, res, para
   const actor = actorOf(device);
   let flow;
   try {
-    flow = account.startLogin({ console: Boolean(body.console) });
+    flow = account.startLogin({ console: Boolean(body.console), sso: Boolean(body.sso) });
     recordAuth({ action: 'login-start', engine: 'claude', provider: null, actor, ok: true, detail: null }, { dataDir });
   } catch (err) {
     recordAuth({ action: 'login-start', engine: 'claude', provider: null, actor, ok: false, detail: err.message }, { dataDir });

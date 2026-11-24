@@ -238,10 +238,10 @@ export class AccountService {
 
   // ---------- login / logout ----------
 
-  startLogin({ console = false } = {}) {
+  startLogin({ console = false, sso = false } = {}) {
     if (!this.claude) throw new Error('Claude Code tidak ditemukan.');
     this.cancelLogin();
-    const child = spawn(this.claude.command, [...this.claude.args, 'auth', 'login', console ? '--console' : '--claudeai'], { windowsHide: true, env: childEnv({ OFFICE_MANAGED: '1' }) });
+    const child = spawn(this.claude.command, [...this.claude.args, 'auth', 'login', sso ? '--sso' : console ? '--console' : '--claudeai'], { windowsHide: true, env: childEnv({ OFFICE_MANAGED: '1' }) });
     const flow = { state: 'starting', url: null, error: null, child, output: '' };
     this.login = flow;
     const onData = (d) => {

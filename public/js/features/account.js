@@ -291,7 +291,7 @@ function claudeBodyHtml() {
   const actions = state.accountAuth
     ? p.loggedIn
       ? `<button class="ghost" data-act="login">⇄ Ganti akun</button><button class="danger" data-act="logout">⏻ Logout</button>`
-      : `<button class="primary" data-act="login">🔑 Login dengan akun Claude</button><button class="ghost" data-act="login-console">Login via Console (API)</button>`
+      : `<button class="primary" data-act="login">🔑 Login dengan akun Claude</button><button class="ghost" data-act="login-console">Login via Console (API)</button><button class="ghost" data-act="login-sso">Login SSO</button>`
     : '<p class="muted small" title="Buka kantor lewat alamat Tailscale, atau lakukan dari laptop.">Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi).</p>';
   if (!p.loggedIn) {
     return `<div class="acct-empty"><p>Claude Code di laptop ini <b>belum login</b>. Login membuka halaman claude.ai di browser, sama seperti <code>claude auth login</code>.</p></div>
@@ -411,9 +411,9 @@ export function initAccount() {
         renderComposer(); // the model list and the ladder follow the switch
         return;
       }
-      if (act === 'login' || act === 'login-console') {
+      if (act === 'login' || act === 'login-console' || act === 'login-sso') {
         if (!window.confirm(accountImpactText('claude-login'))) return;
-        state.account = { ...state.account, login: await api('/api/account/login', { console: act === 'login-console' }) };
+        state.account = { ...state.account, login: await api('/api/account/login', { console: act === 'login-console', sso: act === 'login-sso' }) };
         renderLoginFlow();
       } else if (act === 'cancel-login') {
         await api('/api/account/login/cancel');

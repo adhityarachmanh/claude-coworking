@@ -11,6 +11,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Kemampuan | Di Adhitron | Status |
 |---|---|---|
 | Sesi & prompt (`claude -p`, resume, lanjut) | kotak pesan, Antrian, Riwayat/Riwayat Sesi, ▶ Lanjutkan | ✅ |
+| Login/logout akun (`claude auth login/logout`) | 👤 Akun: login **in-app** (Claude.ai, **Console/API**, **SSO**), kode dari browser ditempel di dialog, logout; status/kadaluarsa login terlihat | ✅ |
 | Model, effort, Mode tim | Pengaturan giliran (⚙), chip model/effort, /model /effort | ✅ |
 | Mode izin (Build/Plan/Auto + deny) | Mode (Shift+Tab), Aturan izin. `acceptEdits` dipetakan ke Build (auto-edit) dan `dontAsk` ke Plan (menolak semua yang bertanya), jadi mode Claude tidak muncul mentah di UI | ✅ |
 | Permission rules (allow/ask/deny) | Aturan izin (`/permissions`), kartu izin | ✅ |

@@ -4,6 +4,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🔑 Login SSO.** Dialog 👤 Akun kini punya tiga jalur login in-app: **Claude.ai** (langganan), **Console/API**, dan **SSO** (`claude auth login --sso`). Alur kode-tempel dan logout tetap sama.
 - **Debug port bentrok & Tailscale.** Saat server dijalankan ketika Adhitron lain masih memakai port yang sama (mis. debug dari VS Code dengan 4317), server kini menjelaskan penyebabnya — hentikan instance itu atau pakai `OFFICE_PORT` lain — bukan mati dengan stack `EADDRINUSE`. Dokumentasi debugging diperbarui: HTTP hanya `127.0.0.1`, listener LAN/Tailscale muncul saat akses HP hidup, HTTPS `:4318` butuh sertifikat, dan env `OFFICE_APP_DIR`/`OFFICE_MANAGED` yang diwarisi harus dihapus untuk debug dari repo.
 
 - **▶ Mulai sesi latar Claude.** Panel Sesi latar Claude kini punya **＋ Sesi latar baru**: prompt (maks 4000) dan nama opsional, dijalankan `claude --bg` di folder project terpilih. Sesi muncul di daftar setelah daemon mendaftarkannya (auto-refresh); tetap memakai kuota.
