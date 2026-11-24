@@ -62,7 +62,9 @@ if (mode === 'fast') {
   console.log(`fast: ${fast.length} file (tanpa browser dan tanpa server)`);
   process.exit(run(fast).status ?? 1);
 } else if (mode === 'smoke') {
-  const missing = SMOKE.filter((f) => !files.includes(path.join('test', f)));
+  // discoverTests names files `test/<f>` (forward slash on every OS): compare and run with the same form, or every
+  // file reads as missing on Windows (path.join gives `test\<f>`)
+  const missing = SMOKE.filter((f) => !files.includes(`test/${f}`));
   if (missing.length) {
     console.error(`smoke: file tidak ditemukan: ${missing.join(', ')}`);
     process.exit(2);
@@ -73,12 +75,12 @@ if (mode === 'fast') {
     console.log(`\n=== test/${f}`);
     // A failed file gets one retry, the same as the UI runner: a genuine regression fails twice, a timing flake is
     // named instead of silently blocking every PR. The longest file is ~1 min, so 2 min is already generous.
-    if (run([path.join('test', f)], 2 * 60_000).status === 0) {
+    if (run([`test/${f}`], 2 * 60_000).status === 0) {
       result.passed.push(f);
       continue;
     }
     console.log(`\n=== test/${f} gagal: diulang sekali`);
-    (run([path.join('test', f)], 2 * 60_000).status === 0 ? result.flaky : result.failed).push(f);
+    (run([`test/${f}`], 2 * 60_000).status === 0 ? result.flaky : result.failed).push(f);
   }
   console.log(`\nsmoke: ${result.passed.length} lulus, ${result.flaky.length} flaky (lulus saat diulang), ${result.failed.length} gagal`);
   for (const f of result.flaky) console.log(`  FLAKY test/${f}`);
