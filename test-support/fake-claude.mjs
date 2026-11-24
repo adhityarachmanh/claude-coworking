@@ -55,6 +55,23 @@ if (args[0] === 'mcp' && args[1] === 'add-json') {
   });
   // No fall-through: the JSON on stdin is the input, so this process waits for it (top-level `return` is illegal here).
 }
+// `claude agents --json` (agent view) and its session commands: a fixed roster, argv logged for tests.
+if (args[0] === 'agents' && args.includes('--json')) {
+  if (process.env.FAKE_AGENTS_LOG) appendFileSync(process.env.FAKE_AGENTS_LOG, `${JSON.stringify(args)}\n`);
+  const roster = [
+    { id: 'bg-abc123', name: 'perbaiki checkout', kind: 'background', state: 'working', status: 'busy', cwd: 'C:/proj/toko', startedAt: 1760000000000, sessionId: 'ses-1', pid: 4242 },
+    { id: 'bg-def456', name: 'review PR 12', kind: 'background', state: 'blocked', status: 'waiting', waitingFor: 'permission prompt', cwd: 'C:/proj/blog', startedAt: 1760000001000 },
+    { id: 'bg-ghi789', name: 'lama selesai', kind: 'background', state: 'done', cwd: 'C:/proj/toko', startedAt: 1760000002000 },
+    { kind: 'interactive', name: 'terminal-1', cwd: 'C:/proj/toko', startedAt: 1760000003000, sessionId: 'ses-3' },
+  ];
+  console.log(JSON.stringify(process.env.FAKE_AGENTS_JSON ? JSON.parse(process.env.FAKE_AGENTS_JSON) : roster));
+  process.exit(0);
+}
+if (['stop', 'respawn', 'rm', 'logs'].includes(args[0]) && args[1]) {
+  if (process.env.FAKE_AGENTS_LOG) appendFileSync(process.env.FAKE_AGENTS_LOG, `${JSON.stringify(args)}\n`);
+  console.log(args[0] === 'logs' ? 'output sesi terakhir' : `${args[0]} ${args[1]} ok`);
+  process.exit(0);
+}
 // `claude plugin …` (🧩 Ekstensi): a tiny marketplace; installs are kept in FAKE_PLUGIN_STATE (JSON list of ids)
 if (args[0] === 'plugin') {
   if (process.env.FAKE_PLUGIN_LOG) appendFileSync(process.env.FAKE_PLUGIN_LOG, `${JSON.stringify(args.slice(1))}\n`);

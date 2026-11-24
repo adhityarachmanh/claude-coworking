@@ -157,6 +157,7 @@
               <button role="menuitem" data-more="dirs" data-cap="permissions" title="Folder di luar project yang boleh dibaca dan ditulis Claude Code">📂 Folder tambahan…</button>
               <button role="menuitem" data-more="skills">🧩 Skills…</button>
               <button role="menuitem" data-more="extensions" title="Plugin dan ekstensi untuk project aktif: Claude Code (marketplace/agents/hooks) atau OpenCode (npm/URL Git)">🧩 Plugin &amp; ekstensi…</button>
+              <button role="menuitem" data-more="bg-agents" title="Sesi latar Claude Code (agent view): lihat, hentikan, mulai ulang, hapus, log">🖥 Sesi latar Claude…</button>
               <button role="menuitem" data-more="style" data-cap="permissions" title="Gaya jawaban Claude: bawaan atau kustom (.claude/output-styles)">🎭 Output style…</button>
               <button role="menuitem" data-more="claude-flags" data-cap="permissions" title="Flag Claude per project: model cadangan, batas giliran/anggaran, tool, sumber setting">⚙️ Flag Claude…</button>
               <button role="menuitem" data-more="auto-mode" data-cap="permissions" title="Aturan classifier Auto mode Claude (semua project, laptop)">🎛️ Auto mode Claude…</button>
@@ -574,6 +575,18 @@
           <p id="oc-plugin-status" class="muted small" role="status" aria-live="polite"></p>
           <pre id="oc-plugin-output" class="cc-output" hidden></pre>
         </div>
+      </div>
+    </div>
+
+    <!-- 🖥 Sesi latar Claude (claude agents --json; features/claude-agents.js): agent view without the terminal -->
+    <div id="bg-agents-modal" class="modal" hidden>
+      <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="bg-agents-title">
+        <div class="modal-head"><b id="bg-agents-title">🖥 Sesi latar Claude</b><button id="bg-agents-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Sesi yang dijalankan <b>daemon Claude Code</b> (agent view), lintas project — bukan antrian Adhitron. Lampirkan dan balas tetap butuh terminal; di sini bisa lihat, hentikan, mulai ulang, hapus, dan buka log.</p>
+        <label class="switch"><input id="bg-agents-all" type="checkbox" checked /> Tampilkan yang sudah selesai</label>
+        <p id="bg-agents-status" class="muted small" role="status" aria-live="polite"></p>
+        <ul id="bg-agents-list" class="ext-list"></ul>
+        <pre id="bg-agents-log" class="cc-output" hidden></pre>
       </div>
     </div>
 

@@ -2460,3 +2460,19 @@ test('📅 rekap mingguan: /api/digest/settings, validasi + simpan jadwal, seen'
   // Kembalikan ke nonaktif: suite lain tidak perlu pekerjaan latar tambahan.
   assert.equal((await api('/api/digest/save', { enabled: false })).status, 200);
 });
+
+test('🖥 Sesi latar Claude: daftar dari agent view, aksi, log, dan id divalidasi', async () => {
+  const list = await api('/api/claude/background-agents', {});
+  assert.equal(list.status, 200, JSON.stringify(list.body));
+  assert.equal(list.body.agents.length, 4, 'roster fake: 3 latar + 1 terminal interaktif');
+  assert.deepEqual(list.body.agents.map((a) => [a.id, a.state, a.kind]), [['bg-abc123', 'working', 'background'], ['bg-def456', 'blocked', 'background'], ['bg-ghi789', 'done', 'background'], [null, null, 'interactive']]);
+  assert.equal((await api('/api/claude/background-agents/action', { action: 'stop', id: 'bg-abc123' })).status, 200);
+  assert.equal((await api('/api/claude/background-agents/action', { action: 'respawn', id: 'bg-ghi789' })).status, 200);
+  assert.equal((await api('/api/claude/background-agents/action', { action: 'rm', id: 'bg-def456' })).status, 200);
+  assert.equal((await api('/api/claude/background-agents/action', { action: 'stop', id: '--evil' })).status, 400);
+  assert.equal((await api('/api/claude/background-agents/action', { action: 'attach', id: 'bg-abc123' })).status, 400, 'attach tetap terminal-only');
+  const log = await api('/api/claude/background-agents/logs', { ref: 'bg-abc123' });
+  assert.equal(log.status, 200, JSON.stringify(log.body));
+  assert.match(log.body.text, /output sesi/);
+  assert.equal((await api('/api/claude/background-agents/logs', { ref: '--evil' })).status, 400);
+});

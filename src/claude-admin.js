@@ -154,6 +154,65 @@ export async function marketplaceAction(bin, { action, source = '', name = '' })
   return { ok: true, message: result?.message ?? firstLine({ out: r.out, err: '' }), marketplaces: await listMarketplaces(bin) };
 }
 
+// ---------- 🖥 Claude background sessions (`claude agents --json`, agent view) ----------
+
+const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{3,79}$/; // the short id used by attach/logs/stop/respawn/rm; never an option
+const AGENT_REF = /^[A-Za-z0-9][\w .-]{0,119}$/; // an id or part of a name; never an option
+const AGENT_STATES = new Set(['working', 'blocked', 'done', 'failed', 'stopped']);
+const AGENT_STATUS = new Set(['busy', 'waiting', 'idle']);
+
+/** One entry of `claude agents --json`, sanitized: a newer CLI cannot leak huge/odd fields into the page. */
+function cleanBackgroundAgent(a) {
+  if (!a || typeof a !== 'object') return null;
+  return {
+    id: typeof a.id === 'string' && AGENT_ID.test(a.id) ? a.id : null,
+    name: typeof a.name === 'string' ? a.name.slice(0, 120) : '',
+    kind: a.kind === 'interactive' ? 'interactive' : 'background',
+    state: AGENT_STATES.has(a.state) ? a.state : null,
+    status: AGENT_STATUS.has(a.status) ? a.status : null,
+    waitingFor: typeof a.waitingFor === 'string' ? a.waitingFor.slice(0, 80) : null,
+    cwd: typeof a.cwd === 'string' ? a.cwd.slice(0, 500) : '',
+    startedAt: Number.isFinite(a.startedAt) ? a.startedAt : null,
+    sessionId: typeof a.sessionId === 'string' ? a.sessionId.slice(0, 80) : null,
+    pid: Number.isInteger(a.pid) ? a.pid : null,
+  };
+}
+
+/**
+ * The sessions Claude Code's supervisor knows: live ones (interactive + background) and, with `all`, finished
+ * background sessions too. `cwd` scopes the list to sessions started under a project (the CLI is project-aware).
+ */
+export async function listBackgroundAgents(bin, { all = true, cwd = null } = {}) {
+  const args = ['agents', '--json', ...(all ? ['--all'] : [])];
+  if (cwd) args.push('--cwd', cwd);
+  const r = await runClaude(bin, args, { timeout: 30_000 });
+  if (!r.ok) throw new AdminError(502, firstLine(r));
+  let parsed;
+  try {
+    parsed = JSON.parse(r.out.trim() || '[]');
+  } catch {
+    throw new AdminError(502, 'Daftar sesi latar tidak terbaca.');
+  }
+  return (Array.isArray(parsed) ? parsed : []).map(cleanBackgroundAgent).filter(Boolean).slice(0, 100);
+}
+
+/** stop | respawn | rm for one background session id. `attach` is terminal-only and is never offered here. */
+export async function backgroundAgentAction(bin, { action, id }) {
+  if (!['stop', 'respawn', 'rm'].includes(action)) throw new AdminError(400, 'Aksi sesi latar tidak dikenal.');
+  if (!AGENT_ID.test(String(id ?? ''))) throw new AdminError(400, 'Id sesi tidak valid.');
+  const r = await runClaude(bin, [action, String(id)], { timeout: action === 'respawn' ? 90_000 : 30_000 });
+  if (!r.ok) throw new AdminError(502, firstLine(r));
+  return { ok: true, message: firstLine({ out: r.out, err: '' }) };
+}
+
+/** `claude logs <id|name>`: the most recent output, bounded before it reaches the browser. */
+export async function backgroundAgentLogs(bin, ref) {
+  if (!AGENT_REF.test(String(ref ?? ''))) throw new AdminError(400, 'Sesi tidak valid.');
+  const r = await runClaude(bin, ['logs', String(ref)], { timeout: 30_000 });
+  if (!r.ok) throw new AdminError(502, firstLine(r));
+  return { text: r.out.trimEnd().slice(-20_000) };
+}
+
 // ---------- your own subagents (.claude/agents/*.md) ----------
 
 const AGENT_NAME = /^[a-z0-9][a-z0-9-]{0,49}$/;

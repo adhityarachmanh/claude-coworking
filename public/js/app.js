@@ -69,6 +69,7 @@ import { initOpenCodeRequests } from './features/opencode-requests.js';
 import { initShortcutLinks } from './features/shortcut-links.js';
 import { initMemory } from './features/memory.js';
 import { initExtensions } from './features/extensions.js';
+import { initClaudeAgents } from './features/claude-agents.js';
 import { initSkills } from './features/skills.js';
 import { initOutputStyle } from './features/output-styles.js';
 import { initOpenCodeCommands } from './features/opencode-commands.js';
@@ -129,6 +130,7 @@ initAddDirs(); // 📂 folder tambahan Claude (--add-dir), dari menu ⋯
 initOpenCodeRequests(); // 📡 OpenCode request log (global or one session)
 initMemory(); // 🧠 /memory: CLAUDE.md / AGENTS.md editor
 initExtensions(); // 🧩 /plugin /agents /hooks
+initClaudeAgents(); // 🖥 sesi latar Claude (claude agents --json)
 initSkills(); // 🧩 /skills: SKILL.md editor for both engines
 initOutputStyle(); // 🎭 output style Claude (built-in + custom)
 initOpenCodeCommands(); // 📝 OpenCode .opencode/commands editor

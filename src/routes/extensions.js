@@ -3,7 +3,7 @@
 // subagent (~/.claude/agents: every project) and the GitHub login: laptop only (a plugin runs code on this laptop;
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
-import { AdminError, claudePurgePlan, claudePurgeProject, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, readAutoMode, saveAgent, saveAutoMode, saveHook } from '../claude-admin.js';
+import { AdminError, backgroundAgentAction, backgroundAgentLogs, claudePurgePlan, claudePurgeProject, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listBackgroundAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, readAutoMode, saveAgent, saveAutoMode, saveHook } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { json } from './http.js';
@@ -73,6 +73,35 @@ export function register(router) {
       { laptop: true, claude: true },
     ),
     { maxBody: 4096 },
+  );
+
+  // 🖥 Claude background sessions (agent view, `claude agents --json`): a global list, not per project.
+  router.post(
+    '/api/claude/background-agents',
+    guard(({ claude, hub }, req, res, params, body) => {
+      let cwd = null;
+      if (body.projectId) {
+        const project = hub?.projects?.get(String(body.projectId));
+        if (!project || project.virtual) throw new AdminError(404, 'Project tidak ditemukan.');
+        cwd = project.path;
+      }
+      return listBackgroundAgents(claude, { all: body.all !== false, cwd }).then((agents) => ({ agents }));
+    }),
+    { maxBody: 1024 },
+  );
+  router.post(
+    '/api/claude/background-agents/action',
+    guard(async ({ claude }, req, res, params, body) => {
+      const result = await backgroundAgentAction(claude, { action: String(body.action ?? ''), id: String(body.id ?? '') });
+      console.log(`Sesi latar Claude ${body.action}: ${String(body.id).slice(0, 80)}`);
+      return result;
+    }, { laptop: true }),
+    { maxBody: 1024 },
+  );
+  router.post(
+    '/api/claude/background-agents/logs',
+    guard(({ claude }, req, res, params, body) => backgroundAgentLogs(claude, String(body.ref ?? ''))),
+    { maxBody: 1024 },
   );
 
   // your own subagents (.claude/agents) and hooks (read-only)
