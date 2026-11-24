@@ -24,3 +24,23 @@ test('attention: status project yang menghambat masuk daftar', async () => {
   for (const kind of ['ci', 'model', 'engine', 'mode']) assert.ok(kinds.includes(kind), kind);
   assert.ok(body.items.filter((i) => i.kind === 'ci').every((i) => i.project === project.id));
 });
+
+test('attention: rekap mingguan yang belum dibaca tampil sampai ditandai dibaca', async () => {
+  const hub = new Hub({ dataDir: mkdtempSync(path.join(tmpdir(), 'att-data-')) });
+  hub.persisted.digest = { enabled: true, weekday: 1, time: '08:00', lastAt: 1_700_000_000_000, lastMarkdown: '# Rekap 7 hari', seenAt: null };
+  const router = buildRouter();
+  const route = router.routes.find((r) => r.pattern === '/api/attention');
+  const call = async () => {
+    let text = '';
+    await route.handler({ hub, ledger: null, taskQueue: null }, { headers: {} }, { writeHead: () => {}, end: (t) => (text = t ?? '') }, {}, {});
+    return JSON.parse(text);
+  };
+  const first = await call();
+  const digest = first.items.find((i) => i.kind === 'digest');
+  assert.ok(digest, 'rekap baru masuk papan');
+  assert.match(digest.label, /Rekap mingguan siap/);
+  assert.equal(digest.detail.includes('Pola kerja'), true);
+  hub.markDigestSeen(1_700_000_000_001);
+  const second = await call();
+  assert.equal(second.items.some((i) => i.kind === 'digest'), false, 'sudah dibaca: hilang dari papan');
+});

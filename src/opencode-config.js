@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseJsonc } from './opencode-bin.js';
 import { advancedView, mergeAdvanced } from './opencode-advanced.js';
+import { applyMcpAdvanced, ensureMcpServer, findMcpServer, mcpAdvancedFields, MCP_NAME } from './opencode-mcp-config.js';
 import { mergePolicies, policiesView } from './opencode-policies.js';
 
 export const OPENCODE_CONFIG_LIMITS = Object.freeze({ bytes: 512 * 1024, agents: 50, name: 64, description: 500, model: 200, prompt: 20_000, references: 50, referenceValue: 500, referenceBranch: 200 });
@@ -1027,6 +1028,59 @@ export function saveOpenCodeConfig({ scope, projectPath, projectId, home, dataDi
   const backup = writeBackup({ scope, projectPath, projectId, path: current.path }, dataDir);
   writeFileAtomic(current.path, output);
   return { ...readOpenCodeConfig({ scope, projectPath, home }), backup: backup?.path ?? null };
+}
+
+// ---------- MCP server options (only OpenCode; `opencode mcp add` has no flags for them) ----------
+
+/**
+ * Where a configured server lives (project config first, then global) and the advanced fields OpenCode would use.
+ * A server missing from both is `found: false` with empty fields, so the dialog can explain instead of guessing.
+ */
+export function readOpenCodeMcpAdvanced({ projectPath, home, name } = {}) {
+  if (!MCP_NAME.test(String(name ?? ''))) throw new OpenCodeConfigError(400, 'Nama server tidak valid.');
+  let parseError = null;
+  let fallback = { path: null, format: null, hash: null };
+  for (const scope of ['project', 'global']) {
+    const current = readOpenCodeConfig({ scope, projectPath, home });
+    if (current.parseError) parseError ??= current.parseError;
+    if (scope === 'project') fallback = { path: current.path, format: current.format, hash: current.hash };
+    const server = findMcpServer(current.config, name);
+    if (!server) continue;
+    return { name, scope, found: true, path: current.path, format: current.format, hash: current.hash, fields: mcpAdvancedFields(server) };
+  }
+  if (parseError) throw new OpenCodeConfigError(400, `Config OpenCode tidak valid: ${parseError}`);
+  // Not configured anywhere: keep the project file's lock so a later save is refused with "not found", not "stale".
+  return { name, scope: null, found: false, ...fallback, fields: mcpAdvancedFields({}) };
+}
+
+/**
+ * Writes the advanced fields of one existing server in the named scope. Every other key of the file and of the
+ * server is kept; the previous file is backed up first. `baseHash` is the hash the dialog read, so a file changed
+ * meanwhile is refused (409) instead of overwritten.
+ */
+export function saveOpenCodeMcpAdvanced({ scope, projectPath, projectId, home, dataDir, name, fields, baseHash } = {}) {
+  if (!MCP_NAME.test(String(name ?? ''))) throw new OpenCodeConfigError(400, 'Nama server tidak valid.');
+  if (scope !== 'project' && scope !== 'global') throw new OpenCodeConfigError(400, 'Cakupan config harus global atau project.');
+  const where = { scope, projectPath, home };
+  const current = readOpenCodeConfig(where);
+  assertWritable(current.path, where);
+  if (current.parseError) throw new OpenCodeConfigError(400, 'Config saat ini tidak valid. Perbaiki lewat tab JSON dulu.');
+  assertBaseHash(baseHash, current.hash);
+  const server = ensureMcpServer(current.config, name);
+  applyMcpAdvanced(server, fields);
+  const backup = writeBackup({ scope, projectPath, projectId, path: current.path }, dataDir);
+  writeFileAtomic(current.path, `${JSON.stringify(current.config, null, 2)}\n`);
+  const saved = readOpenCodeConfig(where);
+  return {
+    name,
+    scope,
+    found: true,
+    path: saved.path,
+    format: saved.format,
+    hash: saved.hash,
+    fields: mcpAdvancedFields(findMcpServer(saved.config, name) ?? {}),
+    backup: backup?.path ?? null,
+  };
 }
 
 /** Deep merge: objects recursively, arrays and scalars replaced by the later file. */

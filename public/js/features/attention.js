@@ -7,6 +7,7 @@ import { setMobileView } from '../ui/layout.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { budgetView, loadBudgetView } from './budget.js';
 import { revealChatMessage } from './chat.js';
+import { openInsights } from './insights.js';
 import { selectProject } from './picker.js';
 import { openQueue } from './queue.js';
 import { selectSettingsTab } from './settings.js';
@@ -16,7 +17,7 @@ const MIN_GAP_MS = 5000;
 let timer = null;
 
 const projectName = (id) => state.projects.find((p) => p.id === id)?.name ?? 'project';
-const ICON = { approval: '✋', plan: '📋', question: '❓', budget: '💰', queue: '📋', interrupted: '▶', routine: '⏰', ci: '❌', model: '⚠', engine: '⛔', mode: '🎚' };
+const ICON = { approval: '✋', plan: '📋', question: '❓', budget: '💰', queue: '📋', interrupted: '▶', routine: '⏰', ci: '❌', model: '⚠', engine: '⛔', mode: '🎚', digest: '📅' };
 
 // ⏰ Tunda: hide one item for an hour without touching the server. The list only reflects it; the state behind
 // it (a pending approval, a paused queue) is unchanged. Stored per browser, so a reload keeps the quiet.
@@ -138,6 +139,12 @@ function go(item) {
   if (item.kind === 'model' || item.kind === 'mode') {
     document.querySelector('#settings-chip')?.click();
     openModal('turn-settings-modal');
+    return;
+  }
+  if (item.kind === 'digest') {
+    // Opening Pola kerja marks the digest read; refresh the board once the round-trip is done.
+    openInsights();
+    setTimeout(() => loadAttention({ force: true }), 1500);
     return;
   }
   if (!item.chatId) return;

@@ -82,3 +82,52 @@ test('addMcpServer: OpenCode tidak punya bentuk stdin — env tetap di argv, dan
   await result.catch(() => {}); // the fake does not implement `opencode mcp add`: only the resolved shape matters here
   assert.ok(true);
 });
+
+test('mcpServerJson: header remote (map) dan transport sse', () => {
+  const json = JSON.parse(
+    mcpServerJson({ name: 'api', url: 'https://api.example/mcp', envs: [], headers: ['Authorization: Bearer tok', 'X-Tim: riset'], transport: 'sse', scope: 'local' }),
+  );
+  assert.deepEqual(json, {
+    mcpServers: { api: { type: 'sse', url: 'https://api.example/mcp', env: {}, headers: { Authorization: 'Bearer tok', 'X-Tim': 'riset' } } },
+  });
+});
+
+test('addMcpServer: header Claude lewat stdin (rahasia tidak di argv), header OpenCode lewat --header', async () => {
+  const box = sandbox();
+  try {
+    const result = await addMcpServer({
+      engine: 'claude',
+      bin,
+      projectPath: box.dir,
+      request: { name: 'api', kind: 'remote', url: 'https://api.example/mcp', headers: [`Authorization: Bearer ${SECRET}`], scope: 'user' },
+    });
+    assert.equal(result.viaStdin, true, 'header memakai jalur add-json');
+    const [entry] = box.read();
+    assert.ok(!JSON.stringify(entry.argv).includes(SECRET), 'argv bebas rahasia');
+    assert.deepEqual(JSON.parse(entry.stdin).mcpServers.api.headers, { Authorization: `Bearer ${SECRET}` });
+
+    await addMcpServer({
+      engine: 'opencode',
+      bin,
+      projectPath: box.dir,
+      request: { name: 'api2', kind: 'remote', url: 'https://api.example/mcp', headers: ['X-Key: abc'], scope: 'project' },
+    });
+    const argv = box.read().at(-1).slice(1);
+    assert.ok(argv.includes('--header'), 'OpenCode memakai --header');
+    assert.equal(argv[argv.indexOf('--header') + 1], 'X-Key: abc');
+    assert.ok(argv.includes('--url'));
+  } finally {
+    box.done();
+  }
+});
+
+test('addMcpServer: header hanya untuk server remote', async () => {
+  await assert.rejects(
+    addMcpServer({ engine: 'claude', bin, projectPath: process.cwd(), request: { name: 'x', kind: 'local', command: 'node x.js', headers: ['A: b'] } }),
+    (err) => err.status === 400 && /remote/.test(err.message),
+  );
+  await assert.rejects(
+    addMcpServer({ engine: 'opencode', bin, projectPath: process.cwd(), request: { name: 'x', kind: 'remote', url: 'https://x.example/mcp', headers: ['bukan-header'] } }),
+    (err) => err.status === 400,
+  );
+});

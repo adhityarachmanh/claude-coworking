@@ -1059,6 +1059,7 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .mcp-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; margin-bottom: 4px; }
 .mcp-main { flex: 1 1 240px; min-width: 0; }
 .mcp-list .mcp-actions { margin-top: 0; }
+.mcp-advanced { overflow: auto; max-height: 55%; padding-right: 4px; }
 .mcp-list .mcp-actions button { padding: 4px 8px; font-size: var(--fs-sm); }
 .mcp-callback { margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--warn-line); border-radius: var(--r-md); background: #3a2e1455; background: color-mix(in srgb, var(--warn-soft) 33%, transparent); }
 .mcp-callback p { margin: 0 0 6px; }
@@ -2257,6 +2258,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .ins-grid small { display: block; color: var(--muted); font-size: var(--fs-xs); }
 .ins-grid b { font-size: var(--fs-md); }
 .ins-head { margin: 14px 0 6px; color: var(--muted); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .04em; }
+.ins-digest { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .ins-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .ins-table th, .ins-table td { padding: 5px 6px; text-align: left; border-bottom: 1px solid var(--border); }
 .ins-table th { color: var(--muted); font-weight: 600; }

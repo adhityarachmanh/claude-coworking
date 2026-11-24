@@ -2431,3 +2431,22 @@ test('Model Auto (Claude Code): the tier model reaches the running process; a ma
   assert.equal(st.model, 'haiku');
   assert.equal(st.modelAuto, false);
 });
+
+test('📅 rekap mingguan: /api/digest/settings, validasi + simpan jadwal, seen', async () => {
+  const view = await api('/api/digest/settings', {});
+  assert.equal(view.status, 200, JSON.stringify(view.body));
+  assert.equal(view.body.digest.enabled, false, 'nonaktif secara default');
+  assert.equal((await api('/api/digest/save', { enabled: true, weekday: 9, time: '08:00' })).status, 400, 'hari di luar 0-6');
+  assert.equal((await api('/api/digest/save', { enabled: true, weekday: 1, time: '7:00' })).status, 400, 'jam harus HH:MM');
+  assert.equal((await api('/api/digest/save', {})).status, 400, 'tidak ada jadwal');
+  const saved = await api('/api/digest/save', { enabled: true, weekday: 3, time: '09:15' });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.digest.weekday, 3);
+  assert.equal(saved.body.digest.time, '09:15');
+  assert.ok(saved.body.digest.dueAt > Date.now(), 'slot berikutnya di masa depan');
+  const stored = JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8')).digest;
+  assert.equal(stored.weekday, 3, 'tersimpan di state.json');
+  assert.equal((await api('/api/digest/seen', {})).status, 200);
+  // Kembalikan ke nonaktif: suite lain tidak perlu pekerjaan latar tambahan.
+  assert.equal((await api('/api/digest/save', { enabled: false })).status, 200);
+});

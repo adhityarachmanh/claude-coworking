@@ -21,7 +21,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Subagents (`.claude/agents`) | 🤖 Subagent (menu/`/agents`) | ✅ |
 | Plugins | 🧩 Plugin (menu/`/plugin`) | ✅ |
 | Hooks | 🪝 Hooks (menu/`/hooks`) — lihat, tambah, ubah, hapus | ✅ |
-| MCP servers | 🔌 MCP (`/mcp`) | ✅ |
+| MCP servers | 🔌 MCP (`/mcp`): tambah lokal/remote, **header HTTP**, transport HTTP/SSE, status/reconnect/disable/login | ✅ |
 | Rewind/checkpoint & ringkas | ⏪ Rewind, 🧹 Ringkas | ✅ |
 | Tugas latar & agent view | ⧗ Tugas latar (`/tasks`), Monitor | ✅ |
 | Worktree (`claude -w`) | ⎇ Worktree (menu) | ✅ |
@@ -67,9 +67,9 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Providers (login, kustom, headers/body) | 👤 Akun → provider, 🔌 header/body; akun tersimpan bisa diganti (credential.activate) | ✅ |
 | Varian model `#variant` | pemilih model | ✅ |
 | Plugins | 🧩 Plugin OpenCode | ✅ |
-| MCP servers | 🔌 MCP; status/reconnect/disable/login; field lanjutan (`timeout`, `codemode`, `pool`, `protocol`, `disabled`) lewat tab JSON | ✅ |
+| MCP servers | 🔌 MCP; status/reconnect/disable/login; **⚙ Lanjutan** per server (`disabled`, `codemode`, `pool`, `protocol`, `cwd`, `timeout`) ditulis ke config dengan backup; header HTTP saat menambah | ✅ |
 | Worktree | ⎇ Worktree (aplikasi) | ✅ |
-| Automations (2.4) | ⏰ Automation OpenCode: prompt/Code Mode, interval/cron/sekali/event MCP, jeda/lanjut/hapus | ✅ |
+| Automations (2.4) | ⏰ Automation OpenCode: prompt/Code Mode, interval/cron/sekali/event MCP (server dari daftar MCP project), jeda/lanjut/hapus | ✅ |
 | `opencode uninstall/share/run/service get-set-unset/debug heap-dump/mini/serve/acp/api/pair/ci` | internal/khusus terminal/berisiko | 🚫 |
 
 ## Fitur di luar CLI (pembeda Adhitron)
@@ -82,7 +82,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Tanya arsip | cari lintas transkrip, jawab hanya dari kutipan dengan nomor sumber yang bisa dibuka | ✅ |
 | Nilai jawaban terakhir | model kedua menilai kebenaran/risiko/verifikasi jawaban terakhir, tanpa tool | ✅ |
 | Anggaran per model | batas harian/mingguan/bulanan per model, dicek sebelum prompt/antrean | ✅ |
-| Rekap mingguan | ringkasan Markdown 7 hari dari ledger (total, project, model, jam) tanpa model call | ✅ |
+| Rekap mingguan | ringkasan Markdown 7 hari dari ledger (total, project, model, jam) tanpa model call; **otomatis** mingguan (hari+jam) dan muncul di ⚠ Perlu tindakan sampai dibuka | ✅ |
 
 ---
 

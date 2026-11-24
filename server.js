@@ -55,6 +55,7 @@ import { classifierModelFor } from './src/model-auto.js';
 import { maxConcurrentOf } from './src/concurrency.js';
 import { applyRetention, retentionOf } from './src/retention.js';
 import { Metrics } from './src/metrics.js';
+import { DigestScheduler } from './src/digest.js';
 import { RoutineScheduler } from './src/routines.js';
 import { BackupScheduler } from './src/backup-schedule.js';
 import { SpotifyService, wifiSpotifyState } from './src/spotify.js';
@@ -549,6 +550,8 @@ const taskQueue = new TaskQueue({
   },
 });
 const routines = new RoutineScheduler({ hub, taskQueue });
+// 📅 Rekap mingguan otomatis: one digest per week from the same ledger, delivered as an attention item until read.
+const digestScheduler = new DigestScheduler({ hub, ledger });
 sessions.taskQueue = taskQueue; // a project's waiting queue item blocks its engine switch (Stage 1)
 sessions.onRateLimit = (id, info) => taskQueue.onRateLimit(id, info);
 // 🔔 Web Push to paired https phones (src/push.js): permission requests, turn done/error, queue paused.
@@ -786,7 +789,7 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const LOCAL_ONLY = new Set(['/api/compare', '/api/opencode-automations/save', '/api/opencode-automations/action', '/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/autologon', '/api/autologon/disable', '/api/pairing/code/push', '/api/wa/link']);
 // Admin biasa: boleh dari HP, tetapi hanya lewat Tailscale HTTPS (terenkripsi + perangkat terpasang). WiFi biasa
 // tetap hanya-lihat; gate read-only di bawah menolak sisanya.
-const SECURE_ADMIN = new Set(['/api/archive/ask', '/api/answer-review', '/api/digest', '/api/app-update/check', '/api/engines/claude', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-service', '/api/opencode-reload', '/api/opencode-info', '/api/opencode-stats', '/api/opencode-permissions/saved', '/api/opencode-permissions/remove', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/opencode/credentials/activate', '/api/config', '/api/concurrency/save', '/api/projects', '/api/groups', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/remote-power/get', '/api/remote-power/settings', '/api/remote-power/test', '/api/remote-power/pair', '/api/remote/revoke', '/api/insights', '/api/opencode-automations', '/api/wa/status', '/api/wa/pair-code', '/api/wa/unlink', '/api/wa/test', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+const SECURE_ADMIN = new Set(['/api/archive/ask', '/api/answer-review', '/api/digest', '/api/digest/settings', '/api/digest/save', '/api/digest/seen', '/api/app-update/check', '/api/engines/claude', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-service', '/api/opencode-reload', '/api/opencode-info', '/api/opencode-stats', '/api/opencode-permissions/saved', '/api/opencode-permissions/remove', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/mcp-advanced', '/api/opencode-config/mcp-advanced-save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/opencode/credentials/activate', '/api/config', '/api/concurrency/save', '/api/projects', '/api/groups', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/remote-power/get', '/api/remote-power/settings', '/api/remote-power/test', '/api/remote-power/pair', '/api/remote/revoke', '/api/insights', '/api/opencode-automations', '/api/wa/status', '/api/wa/pair-code', '/api/wa/unlink', '/api/wa/test', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // ⚡ Power actions (⏻ Matikan PC) from a phone: ONLY over the https (Tailscale) listener, where the link is
 // encrypted end-to-end. A phone paired on plain-HTTP WiFi stays refused — it is read-only anyway, but this
 // gate answers with the real reason ("aksi daya hanya lewat Tailscale") instead of the generic read-only text.
@@ -1584,6 +1587,7 @@ refreshServe().catch(() => {}); // 🌐 Serve status for the phone dialog; refre
 setup.refresh({ deep: true }); // does not block start-up; config.setup is refreshed when the probe ends
 taskQueue.start();
 routines.start();
+digestScheduler.start();
 backupScheduler.start();
 const mirroring = mirror.start();
 openCodeMirror.start();
@@ -1704,6 +1708,7 @@ async function shutdown() {
   spotify.stop();
   waLink.stop(); // closes the WhatsApp socket without touching the encrypted session (a restart reconnects)
   routines.stop();
+  digestScheduler.stop();
   try {
     await sessions.shutdown();
   } catch (err) {

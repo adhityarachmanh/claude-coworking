@@ -16,6 +16,9 @@ export class McpAdminError extends Error {
 
 const NAME = /^[A-Za-z0-9][\w.-]{0,59}$/; // never starts with "-": the name is a CLI argument
 const ENV = /^[A-Za-z_][A-Za-z0-9_]{0,60}=.{0,2000}$/;
+// `Name: value` (HTTP header): a token name, a colon, then anything but a line break (OpenCode `--header`).
+const HEADER = /^([A-Za-z0-9!#$%&'*+.^_`|~-]{1,100}):[ \t]*(.{0,2000})$/;
+const HEADER_MAX = 20;
 
 /** A command line → argv (spaces split, "double" / 'single' quotes group); no shell is ever involved. */
 export function splitArgs(line) {
@@ -38,12 +41,20 @@ export function splitArgs(line) {
   return out;
 }
 
-/** Validated request → { name, url } for a remote server or { name, argv } for a local one. */
-function cleanRequest({ name, kind, command, url, env = [], scope }) {
+/** Validated request → { name, url, headers, transport } for a remote server or { name, argv } for a local one. */
+function cleanRequest({ name, kind, command, url, env = [], headers = [], scope, transport }) {
   if (!NAME.test(String(name ?? ''))) throw new McpAdminError(400, 'Nama server: huruf, angka, titik, minus atau garis bawah (maks 60).');
   const envs = (Array.isArray(env) ? env : []).map((e) => String(e).trim()).filter(Boolean);
   if (envs.some((e) => !ENV.test(e))) throw new McpAdminError(400, 'Variabel lingkungan harus berbentuk NAMA=nilai.');
   const sc = ['local', 'project', 'user'].includes(scope) ? scope : 'local';
+  const heads = (Array.isArray(headers) ? headers : []).map((h) => String(h ?? '').trim()).filter(Boolean);
+  if (heads.length > HEADER_MAX) throw new McpAdminError(400, `Header HTTP maksimal ${HEADER_MAX}.`);
+  if (heads.length && kind !== 'remote') throw new McpAdminError(400, 'Header HTTP hanya untuk server remote.');
+  const clean = heads.map((h) => {
+    const m = HEADER.exec(h);
+    if (!m) throw new McpAdminError(400, 'Header HTTP harus berbentuk NAMA: nilai.');
+    return `${m[1]}: ${m[2].trim()}`;
+  });
   if (kind === 'remote') {
     let u;
     try {
@@ -52,11 +63,11 @@ function cleanRequest({ name, kind, command, url, env = [], scope }) {
       throw new McpAdminError(400, 'URL server tidak valid.');
     }
     if (!['https:', 'http:'].includes(u.protocol)) throw new McpAdminError(400, 'URL server harus http(s).');
-    return { name, url: u.href, envs, scope: sc };
+    return { name, url: u.href, envs, headers: clean, transport: transport === 'sse' ? 'sse' : 'http', scope: sc };
   }
   const argv = splitArgs(command);
   if (!argv.length || argv.length > 50) throw new McpAdminError(400, 'Perintah server kosong.');
-  return { name, argv, envs, scope: sc };
+  return { name, argv, envs, headers: [], transport: 'stdio', scope: sc };
 }
 
 /**
@@ -65,26 +76,29 @@ function cleanRequest({ name, kind, command, url, env = [], scope }) {
  *
  * 🔐 Secrets stay off the command line. `claude mcp add … -e KEY=VALUE` puts every value in argv, where another
  * process (Task Manager, `ps`) can read it. Claude Code 2.1.327+ accepts `mcp add-json <name> -`: the server JSON is
- * read from stdin, so tokens never appear as an argument. A request that carries an environment therefore goes that
- * way; a request without one keeps the older argv form (works on every version and has nothing to hide).
+ * read from stdin, so tokens never appear as an argument. A request that carries an environment or a header therefore
+ * goes that way; a request without one keeps the older argv form (works on every version and has nothing to hide).
  */
-export function addMcpServer({ engine, bin, projectPath, request }) {
-  if (!bin) return Promise.reject(new McpAdminError(404, 'CLI di komputer ini tidak ditemukan.'));
+export async function addMcpServer({ engine, bin, projectPath, request }) {
+  if (!bin) throw new McpAdminError(404, 'CLI di komputer ini tidak ditemukan.');
   const r = cleanRequest(request ?? {});
-  // Claude + env → JSON over stdin (2.1.327+). OpenCode has no stdin form: its `--env` stays on argv, and the UI says so.
-  const viaJson = engine !== 'opencode' && r.envs.length > 0;
+  // Claude + env/header → JSON over stdin (2.1.327+), so tokens stay out of argv. OpenCode has no stdin form: its
+  // `--env`/`--header` stay on argv, and the UI says so.
+  const viaJson = engine !== 'opencode' && (r.envs.length > 0 || r.headers.length > 0);
   const args = [...bin.args, 'mcp', ...(viaJson ? ['add-json', r.name, '-'] : ['add'])];
   if (!viaJson) {
     if (engine === 'opencode') {
       if (r.scope === 'user') args.push('--global');
       for (const e of r.envs) args.push('--env', e);
+      for (const h of r.headers) args.push('--header', h);
       args.push(r.name);
       if (r.url) args.push('--url', r.url);
       else args.push('--', ...r.argv);
     } else {
       args.push('-s', r.scope);
       for (const e of r.envs) args.push('-e', e);
-      if (r.url) args.push('--transport', 'http', r.name, r.url);
+      for (const h of r.headers) args.push('-H', h);
+      if (r.url) args.push('--transport', r.transport === 'sse' ? 'sse' : 'http', r.name, r.url);
       else args.push(r.name, '--', ...r.argv);
     }
   }
@@ -104,9 +118,10 @@ export function addMcpServer({ engine, bin, projectPath, request }) {
  * is the contract, so a test can prove the token is in the JSON and not in argv.
  */
 export function mcpServerJson(r) {
-  const server = r.url ? { type: 'http', url: r.url } : { type: 'stdio', command: r.argv[0], args: r.argv.slice(1) };
+  const server = r.url ? { type: r.transport === 'sse' ? 'sse' : 'http', url: r.url } : { type: 'stdio', command: r.argv[0], args: r.argv.slice(1) };
   // Values only: the NAME= is the CLI's argv syntax; JSON wants a map.
   server.env = Object.fromEntries(r.envs.map((e) => [e.slice(0, e.indexOf('=')), e.slice(e.indexOf('=') + 1)]));
+  if (r.headers?.length) server.headers = Object.fromEntries(r.headers.map((h) => [h.slice(0, h.indexOf(':')), h.slice(h.indexOf(':') + 1).trim()]));
   return JSON.stringify({ mcpServers: { [r.name]: server } });
 }
 
@@ -140,7 +155,7 @@ export function listOpenCodeMcp(projectPath, home = null) {
         byName.set(name, {
           name,
           scope,
-          status: s.enabled === false ? 'disabled' : 'configured',
+          status: s.enabled === false || s.disabled === true ? 'disabled' : 'configured',
           type: remote ? 'remote' : 'local',
           detail: remote ? String(s.url ?? '') : (Array.isArray(s.command) ? s.command.join(' ') : String(s.command ?? '')).slice(0, 200),
         });

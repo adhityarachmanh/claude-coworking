@@ -1,6 +1,7 @@
 // ⚠ Perlu perhatian: one list of things that are waiting or blocked across projects. Read-only, laptop/Tailscale
 // only (the labels can name tools and files, which a plain-WiFi page must not receive).
 import { budgetStop, budgetView, WINDOW_UNITS } from '../budget.js';
+import { cleanDigestSettings, digestUnread } from '../digest.js';
 import { json } from './http.js';
 
 export function register(router) {
@@ -50,6 +51,13 @@ function list({ hub, ledger, taskQueue }, req, res) {
     items.push({ id: `routine:${routine.id}`, kind: 'routine', project: routine.projectId, projectName: projectName(hub, routine.projectId), label: 'Jadwal gagal', detail: routine.lastError || routine.error || routine.prompt?.slice(0, 80) || '' });
   }
 
+  // 📅 A weekly digest the scheduler built and nobody has opened yet: one click marks it read.
+  const digest = cleanDigestSettings(hub.persisted?.digest);
+  if (digestUnread(digest)) {
+    const when = new Date(digest.lastAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long' });
+    items.push({ id: `digest:${digest.lastAt}`, kind: 'digest', project: null, projectName: 'Global', label: `Rekap mingguan siap · ${when}`, detail: 'Buka ⋯ → Pola kerja untuk membaca atau menyalinnya' });
+  }
+
   // A red CI, a model that disappeared (provider logout), the legacy mode choice, and an OpenCode process that died:
   // each one blocks or degrades the next prompt, so it belongs on the same board.
   for (const [id, rt] of hub.runtime ?? []) {
@@ -70,7 +78,7 @@ function list({ hub, ledger, taskQueue }, req, res) {
     items.push({ id: `mode:${id}`, kind: 'mode', project: id, projectName: projectName(hub, id), label: 'Pilih mode izin', detail: 'Mode lama “Jangan tanya” tidak lagi tersedia — pilih Plan atau Build' });
   }
 
-  const order = { approval: 0, plan: 0, question: 0, model: 1, mode: 1, budget: 2, ci: 3, engine: 3, queue: 4, interrupted: 5, routine: 6 };
+  const order = { approval: 0, plan: 0, question: 0, model: 1, mode: 1, budget: 2, ci: 3, engine: 3, queue: 4, interrupted: 5, routine: 6, digest: 7 };
   items.sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
   return json(res, 200, { items: items.slice(0, 30), count: items.length });
 }

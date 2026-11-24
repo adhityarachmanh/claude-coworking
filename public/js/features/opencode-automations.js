@@ -7,6 +7,7 @@ import { openModal } from '../ui/modals.js';
 import { projectEngine } from './engine.js';
 
 let rows = [];
+let mcpNames = null; // server names of this project, asked once per dialog open (null = not asked yet)
 
 const fmtAt = (ts) => (Number.isFinite(ts) ? new Date(ts).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }) : '');
 const OUTCOME = { fired: 'jalan', late: 'terlambat', skipped: 'dilewati', disabled: 'nonaktif', failed: 'gagal', expired: 'kedaluwarsa' };
@@ -58,11 +59,26 @@ async function load() {
   }
 }
 
+/** The project's MCP servers as a datalist, so an event trigger does not have to be typed from memory. */
+async function loadMcpNames() {
+  if (mcpNames) return mcpNames;
+  try {
+    const data = await api(`/api/projects/${state.active}/mcp`);
+    mcpNames = (Array.isArray(data.servers) ? data.servers : []).map((s) => String(s?.name ?? '')).filter(Boolean).slice(0, 100);
+  } catch {
+    mcpNames = []; // status unavailable: free typing still works
+  }
+  const list = $('#oc-auto-server-list');
+  if (list) list.innerHTML = mcpNames.map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
+  return mcpNames;
+}
+
 function syncFields() {
   const trigger = $('#oc-auto-trigger').value;
   for (const box of document.querySelectorAll('[data-trigger-field]')) box.hidden = box.dataset.triggerField !== trigger;
   const action = $('#oc-auto-action').value;
   for (const box of document.querySelectorAll('[data-action-field]')) box.hidden = box.dataset.actionField !== action;
+  if (trigger === 'event') loadMcpNames();
 }
 
 async function save() {
@@ -120,6 +136,9 @@ export function openAutomations() {
   openModal('oc-automations-modal');
   $('#oc-auto-title').textContent = `Automation OpenCode · ${projectName(state.active)}`;
   $('#oc-auto-create').hidden = !state.local;
+  mcpNames = null; // this dialog may have opened for another project
+  const names = $('#oc-auto-server-list');
+  if (names) names.innerHTML = '';
   syncFields();
   load();
 }

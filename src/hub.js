@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync,
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { BUDGET_KEYS, BUDGET_MAX_USD, cents, cleanLimits, cleanModelBudgets, cleanProjectBudgets } from './budget.js';
+import { applyDigestSettings, cleanDigestSettings, digestUnread } from './digest.js';
 import { cleanRoutines } from './routines.js';
 import { CHAT_LIMIT, ChatStore, isChatId } from './chat-store.js';
 import { EFFORT_LEVELS } from './effort.js';
@@ -437,6 +438,8 @@ export class Hub {
     this.persisted.budget = cleanLimits(this.persisted.budget);
     // ⏰ Tugas terjadwal: only valid routines survive; a missing list is fine for older state files.
     this.persisted.routines = cleanRoutines(this.persisted.routines);
+    // 📅 Rekap mingguan otomatis: schedule + the last digest (only valid values survive a hand-edited file).
+    this.persisted.digest = cleanDigestSettings(this.persisted.digest);
     // 💰 Per-project budgets: only valid limits survive.
     this.persisted.projectBudgets = cleanProjectBudgets(this.persisted.projectBudgets);
     this.persisted.modelBudgets = cleanModelBudgets(this.persisted.modelBudgets);
@@ -504,7 +507,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], projectGroups: [], remotePower: { bridgeUrl: '', token: '', offDelaySec: 120, shutdownPc: false, autoCut: false }, settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, modelBudgets: {}, routines: [] };
+    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], projectGroups: [], remotePower: { bridgeUrl: '', token: '', offDelaySec: 120, shutdownPc: false, autoCut: false }, settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, modelBudgets: {}, routines: [], digest: { enabled: false, weekday: 1, time: '08:00', dueAt: null, lastAt: null, lastMarkdown: '', seenAt: null } };
     let stored = {};
     let parsedOk = false;
     try {
@@ -1563,6 +1566,24 @@ export class Hub {
     this.save();
     this.broadcast('budget', this.persisted.budget);
     return next;
+  }
+
+  /** 📅 Rekap mingguan otomatis: schedule and the last digest, saved at once and broadcast to open pages. */
+  setDigest(patch) {
+    this.persisted.digest = applyDigestSettings(this.persisted.digest, patch);
+    this.save();
+    this.broadcast('digest', this.persisted.digest);
+    return this.persisted.digest;
+  }
+
+  markDigestSeen(now = Date.now()) {
+    const digest = cleanDigestSettings(this.persisted.digest);
+    if (!digestUnread(digest)) return digest;
+    digest.seenAt = now;
+    this.persisted.digest = digest;
+    this.save();
+    this.broadcast('digest', digest);
+    return digest;
   }
 
   /** The per-project budget now stored (all off when nothing real was saved). */

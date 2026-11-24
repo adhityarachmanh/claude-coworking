@@ -1,4 +1,4 @@
-// /mcp for OpenCode (src/opencode-mcp.js) against the fake `opencode api` (test-support/fake-acp.mjs).
+﻿// /mcp for OpenCode (src/opencode-mcp.js) against the fake `opencode api` (test-support/fake-acp.mjs).
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,7 +14,7 @@ const bin = { command: process.execPath, args: [path.join(ROOT, 'test-support', 
 function project() {
   const dir = mkdtempSync(path.join(tmpdir(), 'oc-mcp-'));
   mkdirSync(path.join(dir, '.opencode'));
-  writeFileSync(path.join(dir, 'opencode.json'), JSON.stringify({ mcp: { servers: { docs: { type: 'remote', url: 'https://docs.example' }, local: { type: 'local', command: ['x'] } } } }));
+  writeFileSync(path.join(dir, 'opencode.json'), JSON.stringify({ mcp: { servers: { docs: { type: 'remote', url: 'https://docs.example' }, local: { type: 'local', command: ['x'] }, off: { type: 'local', command: ['y'], disabled: true } } } }));
   return dir;
 }
 
@@ -25,6 +25,7 @@ test('status: the configured servers with their live state; servers only the ser
   assert.equal(by.docs.status, 'connected');
   assert.equal(by.docs.scope, 'project');
   assert.equal(by.local.status, 'configured', 'not reported live: stays "terdaftar"');
+  assert.equal(by.off.status, 'disabled', 'disabled: true (v2) is honoured, not only enabled: false');
   assert.equal(by.notion.status, 'needs-auth');
   assert.equal(by.notion.canLogin, true);
   assert.equal(by.broken.status, 'failed');
@@ -71,7 +72,7 @@ test('the global MCP config comes from the app config root, never from the machi
   process.env.OFFICE_OPENCODE_CONFIG_HOME = root;
   try {
     const list = listOpenCodeMcp(dir);
-    assert.deepEqual(list.map((s) => s.name).sort(), ['docs', 'fromRoot', 'local'], 'exactly the config root + the project');
+    assert.deepEqual(list.map((s) => s.name).sort(), ['docs', 'fromRoot', 'local', 'off'], 'exactly the config root + the project');
     assert.equal(list.find((s) => s.name === 'fromRoot').scope, 'user');
     assert.equal(list.some((s) => s.name === 'Neon'), false, 'a server of the machine\'s real config never leaks in');
   } finally {

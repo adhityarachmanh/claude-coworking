@@ -652,9 +652,33 @@
           <label class="oc-field"><span>Jenis</span><select name="kind"><option value="local">Lokal (perintah di laptop ini)</option><option value="remote">Remote (URL http/https)</option></select></label>
           <label class="oc-field mcp-local"><span>Perintah *</span><input name="command" placeholder="mis. npx -y @playwright/mcp@latest" autocomplete="off" spellcheck="false" /></label>
           <label class="oc-field mcp-remote" hidden><span>URL *</span><input name="url" type="url" placeholder="https://mcp.example.com/mcp" autocomplete="off" /></label>
+          <label class="oc-field mcp-remote" hidden><span>Header HTTP (satu per baris, NAMA: nilai)</span><textarea name="headers" rows="2" spellcheck="false" placeholder="Authorization: Bearer …"></textarea></label>
+          <label class="oc-field mcp-remote" data-mcp-claude hidden><span>Transport</span><select name="transport"><option value="http">HTTP (Streamable, disarankan)</option><option value="sse">SSE (server lama)</option></select></label>
           <label class="oc-field"><span>Variabel lingkungan (satu per baris, NAMA=nilai)</span><textarea name="env" rows="2" spellcheck="false" placeholder="API_KEY=…"></textarea></label>
           <label class="oc-field"><span>Berlaku untuk</span><select name="scope"><option value="local">Project ini (pribadi)</option><option value="project">Project ini (dibagi lewat file config project)</option><option value="user">Semua project</option></select></label>
+          <p class="muted small">Claude Code menyimpan env/header lewat stdin (tidak tampil di daftar proses). OpenCode belum punya bentuk itu: env/header tercatat sebagai argumen perintah — pakai <code>{env:NAMA}</code> bila rahasianya ingin tetap di luar file.</p>
           <button class="primary">Tambah</button>
+        </form>
+        <!-- 🔌 Advanced options of ONE OpenCode MCP server (src/opencode-mcp-config.js); OpenCode only. -->
+        <form id="mcp-advanced" class="oc-form mcp-advanced" hidden>
+          <b id="mcp-advanced-title">Lanjutan</b>
+          <p id="mcp-advanced-note" class="muted small"></p>
+          <div class="oc-form-grid">
+            <label class="oc-field"><span>Server aktif</span><select id="mcp-adv-disabled"><option value="inherit">Ikut default (aktif)</option><option value="on">Nonaktifkan</option><option value="off">Aktif (paksa)</option></select></label>
+            <label class="oc-field"><span>Code Mode</span><select id="mcp-adv-codemode"><option value="inherit">Ikut default (nyala)</option><option value="on">Nyala</option><option value="off">Mati (tool langsung)</option></select></label>
+          </div>
+          <div class="oc-form-grid">
+            <label class="oc-field"><span>Pool koneksi</span><select id="mcp-adv-pool"><option value="inherit">Ikut default (per folder)</option><option value="on">Bagikan antar folder</option><option value="off">Selalu per folder</option></select></label>
+            <label class="oc-field"><span>Versi protokol</span><select id="mcp-adv-protocol"><option value="inherit">Ikut default (legacy)</option><option value="auto">auto (probe 2026-07-28)</option><option value="legacy">legacy</option><option value="2026-07-28">2026-07-28 (wajib)</option></select></label>
+          </div>
+          <label class="oc-field"><span>Folder kerja (server lokal)</span><input id="mcp-adv-cwd" maxlength="500" placeholder="mis. ~/work (kosong = folder project)" autocomplete="off" spellcheck="false" /></label>
+          <div class="oc-form-grid">
+            <label class="oc-field"><span>Timeout startup (ms)</span><input id="mcp-adv-timeoutStartup" type="number" min="1" max="86400000" step="1" inputmode="numeric" placeholder="30000" /></label>
+            <label class="oc-field"><span>Timeout katalog (ms)</span><input id="mcp-adv-timeoutCatalog" type="number" min="1" max="86400000" step="1" inputmode="numeric" placeholder="30000" /></label>
+          </div>
+          <label class="oc-field"><span>Timeout eksekusi (ms)</span><input id="mcp-adv-timeoutExecution" type="number" min="1" max="86400000" step="1" inputmode="numeric" placeholder="43200000" /></label>
+          <p id="mcp-adv-error" class="field-error" role="alert"></p>
+          <div class="acct-actions"><button type="button" id="mcp-adv-cancel" class="ghost">Batal</button><button type="button" id="mcp-adv-save" class="primary">Simpan lanjutan</button></div>
         </form>
       </div>
     </div>
@@ -1617,9 +1641,10 @@
           <div class="oc-form-grid" data-trigger-field="cron"><label class="oc-field"><span>Cron (5 field)</span><input id="oc-auto-cron" maxlength="120" placeholder="0 9 * * 1-5" /></label></div>
           <div class="oc-form-grid" data-trigger-field="at"><label class="oc-field"><span>Waktu</span><input id="oc-auto-at" maxlength="120" placeholder="in 20 minutes / 2026-11-27T09:00" /></label></div>
           <div class="oc-form-grid" data-trigger-field="event">
-            <label class="oc-field"><span>Server MCP</span><input id="oc-auto-server" maxlength="100" placeholder="ci" /></label>
-            <label class="oc-field"><span>Event</span><input id="oc-auto-event" maxlength="120" placeholder="build.failed" /></label>
+            <label class="oc-field"><span>Server MCP</span><input id="oc-auto-server" list="oc-auto-server-list" maxlength="100" placeholder="ci" autocomplete="off" /><datalist id="oc-auto-server-list"></datalist></label>
+            <label class="oc-field"><span>Event</span><input id="oc-auto-event" maxlength="120" placeholder="build.failed" autocomplete="off" /></label>
           </div>
+          <p class="muted small" data-trigger-field="event">Event dikirim oleh server MCP-nya sendiri (lihat dokumentasi server). Daftar server diambil dari MCP project ini.</p>
           <div class="oc-form-grid">
             <label class="oc-field"><span>Isi</span><select id="oc-auto-action"><option value="prompt">Prompt</option><option value="code">Skrip Code Mode</option></select></label>
             <label class="oc-field"><span>Berakhir (opsional)</span><input id="oc-auto-expires" maxlength="60" placeholder="7 days" /></label>
@@ -1663,6 +1688,19 @@
         <div class="modal-head"><b id="insights-title">Pola kerja</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div class="oc-form-grid">
           <label class="oc-field"><span>Rentang</span><select id="insights-days"><option value="7">7 hari</option><option value="30" selected>30 hari</option><option value="90">90 hari</option></select></label>
+        </div>
+        <div class="ins-digest">
+          <b>Rekap mingguan otomatis</b>
+          <div class="oc-form-grid">
+            <label class="oc-field"><span>Jadwal</span><select id="digest-auto"><option value="off">Nonaktif</option><option value="on">Aktif</option></select></label>
+            <label class="oc-field"><span>Hari</span><select id="digest-weekday"><option value="0">Minggu</option><option value="1" selected>Senin</option><option value="2">Selasa</option><option value="3">Rabu</option><option value="4">Kamis</option><option value="5">Jumat</option><option value="6">Sabtu</option></select></label>
+          </div>
+          <div class="oc-form-grid">
+            <label class="oc-field"><span>Jam</span><input id="digest-time" type="time" value="08:00" /></label>
+            <div class="acct-actions"><button type="button" id="digest-auto-save" class="primary">Simpan jadwal</button></div>
+          </div>
+          <p id="digest-status" class="muted small"></p>
+          <p id="digest-error" class="field-error" role="alert"></p>
         </div>
         <div class="acct-actions"><button type="button" id="insights-digest" class="ghost">Buat rekap 7 hari</button><button type="button" id="insights-copy" class="ghost" hidden>Salin rekap</button></div>
         <pre id="insights-digest-out" class="cc-output" hidden></pre>

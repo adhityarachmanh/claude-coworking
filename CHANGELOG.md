@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🔌 Server MCP lebih lengkap.** **＋ Tambah server** menerima **header HTTP** untuk server remote, dan di Claude Code transport **SSE** lama masih bisa dipilih. Header/env Claude dikirim lewat stdin (`mcp add-json`), jadi rahasianya tidak muncul sebagai argumen proses. Untuk OpenCode, setiap server punya **⚙ Lanjutan**: nonaktif, Code Mode, pool koneksi, versi protokol (legacy/auto/2026-07-28), folder kerja, dan timeout startup/katalog/eksekusi — hanya kunci itu yang diubah, file lama dicadangkan.
+- **⏰ Automation: server MCP dipilih.** Pada trigger **Event MCP**, kolom server menawarkan nama server MCP project ini (tetap bisa diketik bebas); nama event datang dari servernya dan diberi contoh.
+- **📅 Rekap mingguan otomatis.** Di ⋯ → **Pola kerja** pilih **Aktif**, hari, dan jam. Server membuat rekap 7 hari pada slot itu tanpa memanggil model, lalu menampilkannya di **⚠ Perlu tindakan** sampai kamu membuka Pola kerja (tempat rekap bisa disalin).
+
 ## 1.6.1
 
 - **Perbaikan rilis 1.6.0.** Pemeriksaan budget per model kini aman saat hub tidak menyediakan `settingsFor` (unit test antrean memakai hub palsu), dan ekspresi model di sesi OpenCode diperbaiki. Tidak ada perubahan perilaku untuk pengguna.

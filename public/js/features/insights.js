@@ -44,14 +44,55 @@ async function load() {
   }
 }
 
+/** The weekly schedule and the newest stored digest (built by the server's scheduler, no extra work here). */
+async function loadDigest() {
+  const status = $('#digest-status');
+  try {
+    const data = await api('/api/digest/settings');
+    const d = data.digest ?? {};
+    $('#digest-auto').value = d.enabled ? 'on' : 'off';
+    $('#digest-weekday').value = String(d.weekday ?? 1);
+    $('#digest-time').value = d.time ?? '08:00';
+    const day = $('#digest-weekday').selectedOptions[0]?.textContent ?? '';
+    const next = d.enabled && Number.isFinite(d.dueAt) ? ` · berikutnya ${new Date(d.dueAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}` : '';
+    const last = Number.isFinite(d.lastAt) ? ` · terakhir ${new Date(d.lastAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}` : '';
+    status.textContent = d.enabled ? `Aktif: setiap ${day} ${d.time}${next}${last}` : `Nonaktif${last}`;
+    if (d.lastMarkdown) {
+      const out = $('#insights-digest-out');
+      out.hidden = false;
+      out.textContent = d.lastMarkdown;
+      $('#insights-copy').hidden = false;
+    }
+    if (data.unread) await api('/api/digest/seen');
+  } catch (err) {
+    status.textContent = `Jadwal tidak terbaca: ${err.message}`;
+  }
+}
+
+async function saveDigest() {
+  $('#digest-error').textContent = '';
+  $('#digest-auto-save').disabled = true;
+  try {
+    await api('/api/digest/save', { enabled: $('#digest-auto').value === 'on', weekday: Number($('#digest-weekday').value), time: $('#digest-time').value });
+    toast('Jadwal rekap mingguan tersimpan.', 'ok');
+    await loadDigest();
+  } catch (err) {
+    $('#digest-error').textContent = err.message;
+  } finally {
+    $('#digest-auto-save').disabled = false;
+  }
+}
+
 export function openInsights() {
   if (state.readOnly) return toast('Pola kerja hanya bisa dibuka dari laptop atau lewat Tailscale.', 'warn');
   openModal('insights-modal');
   load();
+  loadDigest();
 }
 
 export function initInsights() {
   $('#insights-days').addEventListener('change', load);
+  $('#digest-auto-save').addEventListener('click', saveDigest);
   $('#insights-digest').addEventListener('click', async () => {
     const out = $('#insights-digest-out');
     out.hidden = false;

@@ -196,6 +196,8 @@ test('routes: 🧩 OpenCode config editor boleh dari HP lewat Tailscale, dengan 
     '/api/opencode-config/backup',
     '/api/opencode-config/backups',
     '/api/opencode-config/consolidate',
+    '/api/opencode-config/mcp-advanced',
+    '/api/opencode-config/mcp-advanced-save',
     '/api/opencode-config/restore',
     '/api/opencode-config/save',
   ]);
