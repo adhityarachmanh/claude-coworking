@@ -1641,6 +1641,16 @@ if (!AUTOLOGON_FAKE) {
   }
 }
 
+server.on('error', (err) => {
+  // A debug copy started while the installed Adhitron still owns the port: say what is wrong and how to fix it
+  // (before this handler the process died with a bare EADDRINUSE stack).
+  if (err?.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} di ${HOST} sudah dipakai proses lain (mungkin Adhitron yang sedang berjalan).`);
+    console.error('Hentikan instance itu, atau jalankan dengan OFFICE_PORT lain. Akses LAN/Tailscale mengikuti port tersebut.');
+    process.exit(1);
+  }
+  throw err;
+});
 server.listen(PORT, HOST, () => {
   const url = `http://localhost:${PORT}`;
   console.log(`Adhitron berjalan di ${url}`);

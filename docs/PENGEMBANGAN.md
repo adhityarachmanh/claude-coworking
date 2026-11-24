@@ -133,6 +133,14 @@ menggantung sekarang gagal sendiri: `startServer()` di suite UI menyerah setelah
 
 - **Server dev**: `data/server.log`; status ringkas `GET /health`; event real-time `GET /stream` (SSE).
   `curl http://localhost:4317/health` setelah `node scripts/restart.mjs`.
+- **Debug dari VS Code / Tailscale**: HTTP hanya mendengarkan `127.0.0.1:4317`; listener LAN/Tailscale baru dibuat saat
+  **Izinkan akses dari HP** hidup, dan HTTPS `:4318` butuh sertifikat di `data/tls`. Aplikasi Adhitron yang sedang
+  berjalan sudah memegang 4317/4318, jadi instance debug dengan **port sama** gagal `EADDRINUSE` (pesan sekarang
+  menyebutkannya) dan alamat Tailscale tetap menunjuk instance lama. Hentikan aplikasi terpasang dulu, pastikan
+  `Get-NetTCPConnection -LocalPort 4317 -State Listen` kosong, lalu jalankan debug; buka
+  `https://<nama-laptop>.<tailnet>.ts.net:4318` (kontrol penuh) atau `http://<ip-tailscale>:4317` (hanya lihat).
+  Terminal yang dijalankan dari dalam Adhitron mewarisi `OFFICE_APP_DIR`/`OFFICE_MANAGED`; hapus keduanya agar debug
+  memakai folder dan data repo, bukan instalasi.
 - **Rute 401/403/409**: baca pesan dari `server.js`/handler; UI harus menampilkan alasannya. Jangan menebak —
   status 409 biasanya berarti ada keadaan di mesin (task terpasang, sandi salah, sesi WhatsApp terpakai).
 - **Proses yatim** (server test atau `claude` yang tidak mati): cari lewat `Get-Process node` dan periksa command
