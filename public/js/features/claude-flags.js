@@ -28,6 +28,7 @@ function render() {
   set('#cf-advisor', st.claudeAdvisor ?? '');
   $('#cf-fast').checked = st.claudeFastMode === true;
   $('#cf-suggest').checked = st.claudePromptSuggestions === true;
+  $('#cf-brief').checked = st.claudeBrief === true;
   set('#cf-autocompact', st.claudeAutocompact ?? '');
   $('#cf-hook-events').checked = st.claudeIncludeHookEvents === true;
   $('#cf-subagent-text').checked = st.claudeForwardSubagentText === true;
@@ -66,6 +67,7 @@ async function save() {
     claudeAdvisor: advisor,
     claudeFastMode: $('#cf-fast').checked,
     claudePromptSuggestions: $('#cf-suggest').checked,
+    claudeBrief: $('#cf-brief').checked,
     claudeAutocompact: $('#cf-autocompact').value.trim() || null,
     claudeIncludeHookEvents: $('#cf-hook-events').checked,
     claudeForwardSubagentText: $('#cf-subagent-text').checked,

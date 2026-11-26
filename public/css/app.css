@@ -691,6 +691,7 @@ body:not([data-tab='chat']) #chat-search { display: none; }
 .msg-copy { flex: none; margin-left: 2px; color: var(--muted); opacity: 0; transition: opacity .15s; }
 .msg:hover .msg-copy, .msg:focus-within .msg-copy { opacity: 1; }
 .tag { display: inline-block; padding: 0 6px; margin-right: 6px; border-radius: var(--r-pill); background: var(--wash-3); }
+.tag.tag-proactive { background: var(--accent-soft); color: var(--accent-2); }
 /* Model logos in small UI (chip ⚙, session bar, chat tags): one size, and a faint disc keeps transparent SVGs
    readable on any theme (the same idea drawModelLogo's dark disc serves on the canvas). */
 .chip-logo, .sb-logo, .tag-logo { width: 15px; height: 15px; object-fit: contain; vertical-align: -3px; margin-right: 5px; padding: 1px; box-sizing: content-box; border-radius: 4px; background: color-mix(in srgb, var(--text) 7%, transparent); }

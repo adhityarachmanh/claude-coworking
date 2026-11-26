@@ -25,6 +25,8 @@ test('insightSummary: rentang, total, urutan project/model, jam tersibuk', () =>
   assert.equal(summary.tokens, 2 * 160);
   assert.equal(summary.costUsd, 4);
   assert.equal(summary.requests, 7);
+  assert.equal(summary.cacheRead, 20);
+  assert.ok(Math.abs(summary.cacheHitRate - 10 / 110) < 1e-9, 'hit rate = cacheRead / (input + cacheRead + cacheWrite)');
 });
 
 test('insightSummary: kosong tetap bentuk yang sama, hari salah jatuh ke 30', () => {
@@ -33,5 +35,6 @@ test('insightSummary: kosong tetap bentuk yang sama, hari salah jatuh ke 30', ()
   assert.equal(empty.busiestHour, null);
   assert.deepEqual(empty.projects, []);
   assert.equal(empty.costUsd, 0);
+  assert.equal(empty.cacheHitRate, 0);
   assert.equal(empty.hours.length, 24);
 });

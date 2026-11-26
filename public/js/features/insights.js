@@ -19,6 +19,7 @@ const rowsHtml = (rows, label) => {
 function render(d) {
   const body = $('#insights-body');
   const busiest = d.busiestHour == null ? 'belum ada data' : `${hourText(d.busiestHour)} (${d.hours[d.busiestHour]} permintaan)`;
+  const hit = Math.round((Number(d.cacheHitRate) || 0) * 100);
   body.innerHTML = `
     <div class="ins-grid">
       <div><small>Biaya</small><b>${fmtUsd(d.costUsd)}</b></div>
@@ -26,6 +27,7 @@ function render(d) {
       <div><small>Permintaan</small><b>${fmtNum(d.requests)}</b></div>
       <div><small>Sesi</small><b>${fmtNum(d.sessions)}</b></div>
       <div><small>Project aktif</small><b>${fmtNum(d.activeProjects)}</b></div>
+      <div><small>Hit cache</small><b>${hit}%</b><small class="muted">baca ${fmtNum(d.cacheRead)} · tulis ${fmtNum(d.cacheWrite)}</small></div>
       <div><small>Jam tersibuk</small><b>${escapeHtml(busiest)}</b></div>
     </div>
     <h3 class="ins-head">Project</h3>

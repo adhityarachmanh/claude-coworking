@@ -23,6 +23,7 @@ test('cleanSettings: flag Claude valid disimpan, junk diabaikan', () => {
     claudeAppendPrompt: 'Selalu jawab dalam bahasa Indonesia.\nSebut file yang diubah.',
     claudePluginDir: 'C:\\plugin\\alat',
     claudePluginUrl: 'https://example.com/plugin.zip',
+    claudeBrief: true,
   });
   const s = hub.settingsFor(project.id);
   assert.equal(s.claudeFallbackModel, 'sonnet,haiku');
@@ -35,6 +36,7 @@ test('cleanSettings: flag Claude valid disimpan, junk diabaikan', () => {
   assert.equal(s.claudeAppendPrompt, 'Selalu jawab dalam bahasa Indonesia.\nSebut file yang diubah.');
   assert.equal(s.claudePluginDir, 'C:\\plugin\\alat');
   assert.equal(s.claudePluginUrl, 'https://example.com/plugin.zip');
+  assert.equal(s.claudeBrief, true);
   hub.updateSettings(project.id, { claudePluginUrl: 'http://example.com/plugin.zip' });
   assert.equal(hub.settingsFor(project.id).claudePluginUrl, 'https://example.com/plugin.zip', 'URL plugin wajib https');
   hub.updateSettings(project.id, { claudeAppendPrompt: 'x'.repeat(5000) });

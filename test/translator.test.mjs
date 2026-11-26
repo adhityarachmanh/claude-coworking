@@ -108,6 +108,17 @@ test('a streamed message whose final block never came is closed when the next me
   assert.deepEqual(assistants(chat).map((m) => [m.text, m.streaming]), [['Sebagian', false], ['Lengkap', false]]);
 });
 
+test('--brief: SendUserMessage is the assistant reply, not a tool row', () => {
+  const { translator, chat } = recorder();
+  translator.handle(use('b1', 'SendUserMessage', { message: 'Halo!', status: 'normal' }));
+  translator.handle(done('b1', 'Message delivered to user.'));
+  translator.handle({ type: 'assistant', parent_tool_use_id: null, message: { id: 'm-b2', content: [{ type: 'tool_use', id: 'b2', name: 'SendUserMessage', input: { message: 'Tes selesai.', status: 'proactive' } }] } });
+  translator.handle(done('b2', 'Message delivered to user.'));
+  translator.handle({ type: 'result', subtype: 'success' });
+  assert.equal(chat().filter((m) => m.kind === 'tool').length, 0, 'tidak ada baris tool untuk SendUserMessage');
+  assert.deepEqual(assistants(chat).map((m) => [m.text, m.brief, m.proactive === true]), [['Halo!', true, false], ['Tes selesai.', true, true]]);
+});
+
 test('tools carry input detail and output; failures are flagged', () => {
   const { translator, office, chat } = recorder();
   translator.handle(use('t1', 'Edit', { file_path: 'src/a.ts', old_string: 'x', new_string: 'y' }));

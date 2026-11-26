@@ -1815,7 +1815,10 @@
           <label class="oc-field"><span>Model advisor (--advisor)</span><input id="cf-advisor" maxlength="100" placeholder="opus / sonnet (kosong = mati)" /></label>
           <label class="oc-field"><span>Fast mode</span><input id="cf-fast" type="checkbox" /></label>
         </div>
-        <label class="oc-field"><span>Saran prompt berikutnya (--prompt-suggestions)</span><input id="cf-suggest" type="checkbox" /></label>
+        <div class="oc-form-grid">
+          <label class="oc-field"><span>Saran prompt berikutnya (--prompt-suggestions)</span><input id="cf-suggest" type="checkbox" /></label>
+          <label class="oc-field"><span>Balasan lewat SendUserMessage (--brief)</span><input id="cf-brief" type="checkbox" /></label>
+        </div>
         <div class="oc-form-grid">
           <label class="oc-field"><span>Auto-compact (--autocompact)</span><input id="cf-autocompact" maxlength="10" placeholder="auto / 500k (kosong = bawaan)" /></label>
           <label class="oc-field"><span>Event hook di chat (--include-hook-events)</span><input id="cf-hook-events" type="checkbox" /></label>
@@ -1827,6 +1830,7 @@
           <label class="oc-field"><span>Debug log (--debug)</span><input id="cf-debug" type="checkbox" /></label>
         </div>
         <p class="muted small">Mode privat membuat sesi tidak bisa dilanjutkan; safe mode melepas CLAUDE.md, skill, plugin, hook, dan MCP untuk diagnosa.</p>
+        <p class="muted small"><b>--brief</b> memakai tool <code>SendUserMessage</code>: jawaban yang ditulis model lewat tool itu tampil di chat sebagai balasan biasa, dan pesan berstatus proaktif diberi tanda. Tool ini hanya aktif bila akun Claude berhak; tanpa itu CLI mengabaikan flag-nya.</p>
         <p class="muted small">Advisor dan fast mode hanya berlaku pada model/provider yang mendukung; fast mode memakai kredit penggunaan dan bisa lebih mahal.</p>
         <p id="claude-flags-error" class="field-error" role="alert"></p>
         <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="claude-flags-save" class="primary">💾 Simpan flag</button></div>

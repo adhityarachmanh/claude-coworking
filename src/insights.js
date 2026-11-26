@@ -46,6 +46,8 @@ export function insightSummary(rows, { now = Date.now(), days = 30 } = {}) {
   }
   const top = (map) => [...map.values()].sort((a, b) => b.costUsd - a.costUsd || b.tokens - a.tokens).slice(0, 8);
   const busiest = hours.indexOf(Math.max(...hours));
+  // Same definition as the report's hit rate: how much of the context sent was served from the prompt cache.
+  const contextIn = input + cacheRead + cacheWrite;
   return {
     days: range,
     from,
@@ -55,6 +57,7 @@ export function insightSummary(rows, { now = Date.now(), days = 30 } = {}) {
     output,
     cacheRead,
     cacheWrite,
+    cacheHitRate: contextIn ? cacheRead / contextIn : 0,
     requests,
     turns,
     sessions: sessions.size,

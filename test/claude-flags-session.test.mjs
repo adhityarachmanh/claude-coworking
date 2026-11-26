@@ -60,6 +60,7 @@ test('spawn meneruskan flag Claude per project', async () => {
     claudeNoSessionPersistence: true,
     claudeSafeMode: true,
     claudeDebug: true,
+    claudeBrief: true,
   });
   const session = manager.get(project);
   session.spawn(hub.settingsFor(project.id));
@@ -84,6 +85,7 @@ test('spawn meneruskan flag Claude per project', async () => {
   assert.ok(argv.includes('--no-session-persistence'));
   assert.ok(argv.includes('--safe-mode'));
   assert.ok(argv.includes('--debug'));
+  assert.ok(argv.includes('--brief'), '--brief diteruskan saat dinyalakan');
   const settingsFile = argv[at('--settings') + 1];
   assert.ok(settingsFile && readFileSync(settingsFile, 'utf8').includes('"fastMode":true'), 'fast mode lewat --settings');
   session.closeChild();

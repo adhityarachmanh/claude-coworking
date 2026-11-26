@@ -39,6 +39,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `--autocompact <auto\|tokens>` | ⚙️ Flag Claude → **Auto-compact** (`auto`/`500k`, minimal 100k) → `--autocompact` | ✅ |
 | `--include-hook-events` | ⚙️ Flag Claude → **Event hook di chat** → hook yang gagal muncul sebagai baris peringatan (nama event + baris pertama stderr) | ✅ |
 | `--forward-subagent-text` | ⚙️ Flag Claude → **Transkrip subagent di kartu delegasi**: kata-kata subagent ikut tersimpan di detail kartu, lalu laporan akhirnya | ✅ |
+| `--brief` (tool `SendUserMessage`) | ⚙️ Flag Claude → **Balasan lewat SendUserMessage**: `tool_use` `SendUserMessage`/`Brief` tampil sebagai balasan asisten (bukan baris tool, hasil "Message delivered" diabaikan); `status:"proactive"` diberi tag **proaktif**. Probe 2.1.331: tool hanya didaftarkan bila akun berhak (`isBriefEntitled`); tanpa entitlement flag diabaikan CLI dan jawaban tetap berupa teks biasa | ✅ |
 | `--no-session-persistence`, `--safe-mode`, `--debug` | ⚙️ Flag Claude → **Mode privat**, **Safe mode**, **Debug log** | ✅ |
 | `claude auto-mode defaults\|reset`, `/auto-mode-setup` | ⋯ → **Auto mode Claude** (editor `autoMode` di `~/.claude/settings.json`, laptop) | ✅ (reset = kosongkan daftar) |
 | `claude purge` | ⋯ → **Bersihkan data Claude** (pratinjau `--dry-run`, ketik path folder kerja untuk konfirmasi, laptop, tidak saat giliran/antrian berjalan; worktree aktif ikut jadi sasaran) | ✅ |
@@ -83,7 +84,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Kemampuan | Di Adhitron | Status |
 |---|---|---|
 | Papan “perlu tindakan” lintas project | izin/rencana/pertanyaan, model hilang, mode lama, budget, CI gagal, OpenCode berhenti, antrian, giliran terputus, jadwal gagal; tunda 1 jam | ✅ |
-| Laporan pola kerja | biaya/token/permintaan/sesi per project, model, dan jam (7/30/90 hari) | ✅ |
+| Laporan pola kerja | biaya/token/permintaan/sesi per project, model, dan jam (7/30/90 hari), plus hit cache (baca/tulis) | ✅ |
 | Bandingkan model | satu pertanyaan ke dua model Claude (tool mati, sesi tidak disimpan), jawaban + biaya + durasi | ✅ |
 | Tanya arsip | cari lintas transkrip, jawab hanya dari kutipan dengan nomor sumber yang bisa dibuka | ✅ |
 | Nilai jawaban terakhir | model kedua menilai kebenaran/risiko/verifikasi jawaban terakhir, tanpa tool | ✅ |

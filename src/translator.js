@@ -7,6 +7,8 @@ const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 // Who writes product code — the people QA hands a bug back to.
 const BUILDER_ROLES = new Set(['frontend', 'backend', 'dba', 'devops', 'ui-ux', 'security', 'freelancer']);
 const IGNORED_TOOLS = new Set(['SubagentHandback']); // harness plumbing, not work
+// --brief (Claude Code 2.1.331): the model writes the reply the user reads through this tool instead of plain text.
+const BRIEF_TOOLS = new Set(['SendUserMessage', 'Brief']);
 const ASYNC_LAUNCH = /async agent launched|launched successfully|running in the background/i;
 
 /** A tool whose name is itself a role id ("backend", "qa"…): an ACP step names its worker directly. */
@@ -631,7 +633,11 @@ export class StreamTranslator {
         this.think(parentId);
         if (!parentId) this.finishThinking(block.thinking);
       }
-      else if (block.type === 'tool_use') this.onToolUse(block, parentRole, parentId, /^acp-tool-/.test(msg.message?.id ?? ''));
+      else if (block.type === 'tool_use') {
+        // The brief reply is the assistant's answer, not a tool row (its "Message delivered" result is ignored).
+        if (BRIEF_TOOLS.has(block.name)) this.onBrief(block, parentId, parentRole, msg.message.id);
+        else this.onToolUse(block, parentRole, parentId, /^acp-tool-/.test(msg.message?.id ?? ''));
+      }
     }
   }
 
@@ -669,7 +675,7 @@ export class StreamTranslator {
     this.status({ context: { used, window: this.contextWindow || null, autoCompactAt: this.autoCompactAt ?? null } });
   }
 
-  onText(text, parentId, parentRole, messageId) {
+  onText(text, parentId, parentRole, messageId, extra = {}) {
     if (parentId) {
       // --forward-subagent-text: keep the subagent's own words for the delegation card (not the chat column).
       const prev = this.agentText.get(parentId) ?? '';
@@ -684,8 +690,21 @@ export class StreamTranslator {
     bubble.live = '';
     clearTimeout(this.flushTimer);
     this.flushTimer = null;
-    this.sink.updateChat(bubble.chatId, { text: bubble.done, streaming: false });
+    this.sink.updateChat(bubble.chatId, { text: bubble.done, streaming: false, ...extra });
     this.sink.office({ kind: 'say', role: this.coordinator(), text: firstSentence(text) });
+  }
+
+  /**
+   * --brief: the tool's `message` IS the reply the user reads (the CLI's own words: "the answer lives here"). It is
+   * shown as the assistant bubble of that message, with `proactive` kept for the "proaktif" tag in the UI.
+   */
+  onBrief(block, parentId, parentRole, messageId) {
+    const input = block.input ?? {};
+    const text = typeof input.message === 'string' ? input.message.trim() : '';
+    if (!text) return;
+    const extra = { brief: true };
+    if (input.status === 'proactive') extra.proactive = true;
+    this.onText(text, parentId, parentRole, messageId, extra);
   }
 
   closeBubble() {
