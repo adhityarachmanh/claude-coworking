@@ -25,7 +25,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | MCP servers | 🔌 MCP (`/mcp`): tambah lokal/remote, **header HTTP**, transport HTTP/SSE, status/reconnect/disable/login, **logout** (hapus kredensial OAuth) | ✅ |
 | Rewind/checkpoint & ringkas | ⏪ Rewind, 🧹 Ringkas | ✅ |
 | Tugas latar | ⧗ Tugas latar (`/tasks`), Monitor: shell dan subagent milik sesi app | ✅ |
-| Agent view / sesi latar Claude (`claude agents --json`, stop/rm/respawn/logs, `daemon status`) | ⋯ → **🖥 Sesi latar Claude**: daftar lintas project (`--json --all`), state/status/waitingFor, stop, respawn, rm, log, dan status daemon. **Attach/balas tetap terminal** (TUI agent view) | ✅ (kecuali attach) |
+| Agent view / sesi latar Claude (`claude agents --json`, stop/rm/respawn/logs, `daemon status`, `daemon.log`) | ⋯ → **🖥 Sesi latar Claude**: daftar lintas project (`--json --all`), state/status/waitingFor, stop, respawn, rm, log sesi, status daemon, dan **log daemon**. **Attach/balas tetap terminal** (TUI agent view) | ✅ (kecuali attach) |
 | Worktree (`claude -w`) | ⎇ Worktree (menu) | ✅ |
 | PR (`gh`) | 🧩 Pull request | ✅ |
 | `/goal`, `/loop`, `/fewer-permission-prompts` | diteruskan sebagai command (katalog `/goal`, `/loop`, `/fewer-permission-prompts`) | ✅ |

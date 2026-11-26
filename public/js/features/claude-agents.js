@@ -132,11 +132,25 @@ export function openClaudeAgents() {
   }, 8000);
 }
 
+/** The supervisor log's tail (`~/.claude/daemon.log`), shown when the list is not enough to explain a state. */
+async function showDaemonLog() {
+  const out = $('#bg-agents-log');
+  out.hidden = false;
+  out.textContent = 'Memuat log daemon…';
+  try {
+    const r = await api('/api/claude/background-agents/daemon-log', {});
+    out.textContent = r.exists ? r.text || '(log kosong)' : 'Belum ada daemon.log — daemon Claude Code belum pernah berjalan.';
+  } catch (err) {
+    out.textContent = err.message;
+  }
+}
+
 export function initClaudeAgents() {
   $('#bg-agents-refresh')?.addEventListener('click', () => {
     load();
     loadDaemon();
   });
+  $('#bg-daemon-log')?.addEventListener('click', showDaemonLog);
   $('#bg-agents-all')?.addEventListener('change', () => load());
   $('#bg-agent-start')?.addEventListener('click', startAgent);
   $('#bg-agents-list')?.addEventListener('click', (e) => {

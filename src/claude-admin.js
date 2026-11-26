@@ -308,6 +308,18 @@ export async function backgroundAgentLogs(bin, ref) {
   return { text: r.out.trimEnd().slice(-20_000) };
 }
 
+/** 📜 The tail of the supervisor log (`~/.claude/daemon.log`), for diagnosing agent view without a terminal. */
+export function backgroundDaemonLog({ lines = 200 } = {}) {
+  const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  try {
+    const text = readFileSync(path.join(dir, 'daemon.log'), 'utf8');
+    const tail = text.split('\n').slice(-Math.max(1, Math.min(2000, Number(lines) || 200))).join('\n');
+    return { exists: true, text: tail.slice(-20_000) };
+  } catch {
+    return { exists: false, text: '' };
+  }
+}
+
 // ---------- your own subagents (.claude/agents/*.md) ----------
 
 const AGENT_NAME = /^[a-z0-9][a-z0-9-]{0,49}$/;

@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **📜 Log daemon sesi latar.** Panel Sesi latar Claude bisa menampilkan ekor `~/.claude/daemon.log` (200 baris terakhir, lewat `CLAUDE_CONFIG_DIR` bila diatur) untuk mendiagnosa agent view tanpa terminal.
+
 ## 1.11.0
 
 - **🛡️ Stabilitas: crash tidak lagi senyap.** `uncaughtException` dicatat ke `data/server.log` (stack lengkap), state disimpan, lalu proses keluar agar penjaga Task Scheduler/auto-start menyalakannya lagi; `unhandledRejection` dicatat tanpa mematikan kantor. Test unit yang lama basi (bentuk MCP `add-json` dan agent V2) diperbarui supaya regresi benar-benar terdeteksi.

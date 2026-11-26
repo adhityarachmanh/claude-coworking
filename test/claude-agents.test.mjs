@@ -1,11 +1,11 @@
 // 🖥 Claude background sessions (agent view): the list from `claude agents --json` is sanitized and the
 // stop/respawn/rm/logs commands are built with a validated id, all against the fake CLI (no real session).
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { backgroundAgentAction, backgroundAgentLogs, daemonStatus, listBackgroundAgents, startBackgroundAgent } from '../src/claude-admin.js';
+import { backgroundAgentAction, backgroundAgentLogs, backgroundDaemonLog, daemonStatus, listBackgroundAgents, startBackgroundAgent } from '../src/claude-admin.js';
 
 const FAKE = path.join(process.cwd(), 'test-support', 'fake-claude.mjs');
 const bin = { command: process.execPath, args: [FAKE] };
@@ -102,5 +102,22 @@ test('startBackgroundAgent: `claude --bg`, nama opsional, prompt divalidasi', as
     await assert.rejects(startBackgroundAgent(bin, { prompt: 'x', name: '--evil', cwd: box.dir }), (e) => e.status === 400);
   } finally {
     box.done();
+  }
+});
+
+test('backgroundDaemonLog: ekor daemon.log dari CLAUDE_CONFIG_DIR, dibatasi jumlah baris', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-daemon-log-'));
+  const prev = process.env.CLAUDE_CONFIG_DIR;
+  writeFileSync(path.join(dir, 'daemon.log'), Array.from({ length: 300 }, (_, i) => `line ${i}`).join('\n'));
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  try {
+    const r = backgroundDaemonLog({ lines: 50 });
+    assert.equal(r.exists, true);
+    assert.match(r.text, /line 299/);
+    assert.doesNotMatch(r.text, /line 200/);
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = prev;
+    rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -3,7 +3,7 @@
 // subagent (~/.claude/agents: every project) and the GitHub login: laptop only (a plugin runs code on this laptop;
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
-import { AdminError, backgroundAgentAction, backgroundAgentLogs, claudePurgePlan, claudePurgeProject, daemonStatus, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listBackgroundAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, pluginConfigure, pluginDetails, pluginPrune, readAutoMode, saveAgent, saveAutoMode, saveHook, startBackgroundAgent } from '../claude-admin.js';
+import { AdminError, backgroundAgentAction, backgroundAgentLogs, backgroundDaemonLog, claudePurgePlan, claudePurgeProject, daemonStatus, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listBackgroundAgents, listHooks, listMarketplaces, listPlugins, marketplaceAction, pluginAction, pluginConfigure, pluginDetails, pluginPrune, readAutoMode, saveAgent, saveAutoMode, saveHook, startBackgroundAgent } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { json } from './http.js';
@@ -143,6 +143,11 @@ export function register(router) {
   router.post(
     '/api/claude/background-agents/daemon',
     guard(({ claude }) => daemonStatus(claude)),
+    { maxBody: 1024 },
+  );
+  router.post(
+    '/api/claude/background-agents/daemon-log',
+    guard((ctx, req, res, params, body) => backgroundDaemonLog({ lines: Number(body.lines) })),
     { maxBody: 1024 },
   );
   router.post(
