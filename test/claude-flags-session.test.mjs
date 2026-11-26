@@ -49,6 +49,8 @@ test('spawn meneruskan flag Claude per project', async () => {
     claudeDisallowedTools: ['Edit'],
     claudeSettingSources: 'user,project',
     claudeAppendPrompt: 'Selalu sebut file yang diubah.',
+    claudePluginDir: 'C:\\plugin\\alat',
+    claudePluginUrl: 'https://example.com/plugin.zip',
     claudeAdvisor: 'opus',
     claudeFastMode: true,
     claudePromptSuggestions: true,
@@ -72,6 +74,8 @@ test('spawn meneruskan flag Claude per project', async () => {
   assert.equal(argv[at('--disallowedTools') + 1], 'Edit');
   assert.equal(argv[at('--setting-sources') + 1], 'user,project');
   assert.equal(argv[at('--append-system-prompt') + 1], 'Selalu sebut file yang diubah.');
+  assert.equal(argv[at('--plugin-dir') + 1], 'C:\\plugin\\alat');
+  assert.equal(argv[at('--plugin-url') + 1], 'https://example.com/plugin.zip');
   assert.equal(argv[at('--advisor') + 1], 'opus');
   assert.ok(argv.includes('--prompt-suggestions'), 'saran prompt ikut saat dinyalakan');
   assert.equal(argv[at('--autocompact') + 1], '500k');

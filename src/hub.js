@@ -65,14 +65,14 @@ export const DEMO_ID = 'demo';
 // 💬 The built-in "Chat umum": a project with the same engines as any other, but its folder is an app-owned sandbox
 // under dataDir, so a general chat never touches a real project folder. A fixed id (never the folder hash).
 export const GENERAL_ID = 'chat-umum';
-export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [], claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false, claudeForwardSubagentText: false, claudeNoSessionPersistence: false, claudeSafeMode: false, claudeDebug: false, claudeAppendPrompt: '' };
+export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [], claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false, claudeForwardSubagentText: false, claudeNoSessionPersistence: false, claudeSafeMode: false, claudeDebug: false, claudeAppendPrompt: '', claudePluginDir: '', claudePluginUrl: '' };
 
 // 🎛️ Claude's per-project spawn flags. One sanitizer for both the write path (cleanSettings) and settingsFor, so a
 // hand-edited state.json can never reach the spawn arguments.
 const CLAUDE_FALLBACK = /^[\w./:#,-]{0,200}$/;
 const CLAUDE_TOOL_TEXT = /^[\x20-\x7e]{0,500}$/;
 const CLAUDE_SOURCES = /^(user|project|local)(,(user|project|local)){0,2}$/;
-const CLAUDE_FLAG_DEFAULTS = { claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false, claudeForwardSubagentText: false, claudeNoSessionPersistence: false, claudeSafeMode: false, claudeDebug: false, claudeAppendPrompt: '' };
+const CLAUDE_FLAG_DEFAULTS = { claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false, claudeForwardSubagentText: false, claudeNoSessionPersistence: false, claudeSafeMode: false, claudeDebug: false, claudeAppendPrompt: '', claudePluginDir: '', claudePluginUrl: '' };
 
 const cleanFlagNumber = (raw, { decimal = false } = {}) => {
   if (raw === null || raw === '') return null;
@@ -167,6 +167,16 @@ function cleanClaudeFlags(base, patch) {
     const text = raw.trim();
     if (!text) next.claudeAppendPrompt = '';
     else if (text.length <= 4000) next.claudeAppendPrompt = text;
+  }
+  if ('claudePluginDir' in patch) {
+    const text = typeof patch.claudePluginDir === 'string' ? patch.claudePluginDir.replace(/\u0000/g, '').trim() : '';
+    if (!text) next.claudePluginDir = '';
+    else if (text.length <= 500) next.claudePluginDir = text;
+  }
+  if ('claudePluginUrl' in patch) {
+    const text = typeof patch.claudePluginUrl === 'string' ? patch.claudePluginUrl.trim() : '';
+    if (!text) next.claudePluginUrl = '';
+    else if (/^https:\/\/[^\s]{1,480}$/i.test(text)) next.claudePluginUrl = text;
   }
   return next;
 }

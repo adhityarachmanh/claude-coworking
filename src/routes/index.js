@@ -26,6 +26,7 @@ import * as memory from './memory.js';
 import * as misc from './misc.js';
 import * as opencodeCheck from './opencode-check.js';
 import * as opencodeConfig from './opencode-config.js';
+import * as ollama from './ollama.js';
 import * as opencodeAutomations from './opencode-automations.js';
 import * as permissions from './permissions.js';
 import * as projects from './projects.js';
@@ -91,6 +92,7 @@ export function buildRouter() {
     diagnostics.register,
     opencodeCheck.register,
     opencodeConfig.register,
+    ollama.register,
     setup.register,
     misc.register,
     autologon.register,

@@ -4,6 +4,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🧩 Plugin sesi-only.** ⚙ Flag Claude punya **Plugin folder/zip** (`--plugin-dir`) dan **Plugin URL** (`--plugin-url`, wajib https): plugin dimuat hanya untuk proses Claude project ini, tanpa mengubah marketplace/instalasi.
+- **🦙 Panel model lokal (Ollama).** ⚙ → Sistem → **Model lokal** menampilkan versi, daftar model, ukuran/kuantitas, dan model yang sedang berjalan beserta **persentase di VRAM** (GPU vs CPU) dari API Ollama. **Salin nama** memberi `ollama/<model>` untuk dipilih di pemilih model OpenCode. Alamat mengikuti `OLLAMA_HOST`/`OFFICE_OLLAMA_URL`; read-only, tanpa CLI.
 - **📜 Log daemon sesi latar.** Panel Sesi latar Claude bisa menampilkan ekor `~/.claude/daemon.log` (200 baris terakhir, lewat `CLAUDE_CONFIG_DIR` bila diatur) untuk mendiagnosa agent view tanpa terminal.
 
 ## 1.11.0

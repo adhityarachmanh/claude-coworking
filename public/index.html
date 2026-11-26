@@ -1364,6 +1364,16 @@
             <p id="plugins-engine" class="muted small"></p>
           </section>
           <hr />
+          <!-- 🦙 Ollama (model lokal): status read-only, GPU/CPU, tanpa CLI (features/ollama.js, src/ollama.js) -->
+          <section id="ollama-section" class="claude-check" aria-labelledby="ollama-title">
+            <b id="ollama-title">🦙 Model lokal (Ollama)</b>
+            <p class="muted small">Opsional. OpenCode mendeteksi Ollama di <code>127.0.0.1:11434</code>; bagian ini hanya membaca model dan apakah sedang berjalan di GPU atau CPU.</p>
+            <p id="ollama-status" class="muted small" role="status" aria-live="polite">Memeriksa Ollama…</p>
+            <div class="backup-actions"><button type="button" id="ollama-refresh" class="ghost">↻ Periksa Ollama</button></div>
+            <ul id="ollama-models" class="ext-list"></ul>
+            <p id="ollama-hint" class="muted small"></p>
+          </section>
+          <hr />
           <!-- Sebuah HP lewat Tailscale boleh mengubah setelan di tab ini, kecuali yang menuntut mesin ini sendiri:
                UAC (nyala otomatis/autologon). Catatan ini menggantikan dua kontrol itu dengan status kesiapan
                reboot (core/autostart-rules.js), bukan menyisakan ruang kosong. -->
@@ -1796,6 +1806,10 @@
         <label class="oc-field"><span>Larang (--disallowedTools)</span><textarea id="cf-disallowed" rows="3" placeholder="Bash(rm *)"></textarea></label>
         <label class="oc-field"><span>Sumber setting (--setting-sources)</span><input id="cf-sources" maxlength="40" placeholder="user,project,local (kosong = semua)" /></label>
         <label class="oc-field"><span>Instruksi sistem tambahan (--append-system-prompt)</span><textarea id="cf-extra-prompt" rows="3" maxlength="4000" placeholder="mis. Selalu jawab dalam bahasa Indonesia dan sebut file yang diubah."></textarea></label>
+        <div class="oc-form-grid">
+          <label class="oc-field"><span>Plugin folder/zip sesi (--plugin-dir)</span><input id="cf-plugin-dir" maxlength="500" placeholder="D:\\plugin\\alat" autocomplete="off" spellcheck="false" /></label>
+          <label class="oc-field"><span>Plugin URL sesi (--plugin-url)</span><input id="cf-plugin-url" maxlength="500" type="url" placeholder="https://…/plugin.zip" autocomplete="off" spellcheck="false" /></label>
+        </div>
         <div class="oc-form-grid">
           <label class="oc-field"><span>Model advisor (--advisor)</span><input id="cf-advisor" maxlength="100" placeholder="opus / sonnet (kosong = mati)" /></label>
           <label class="oc-field"><span>Fast mode</span><input id="cf-fast" type="checkbox" /></label>

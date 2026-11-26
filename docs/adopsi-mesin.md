@@ -32,7 +32,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `/code-review` (lokal, base/PR/path) | diteruskan sebagai command (katalog `/code-review`); hasil review muncul di chat | ✅ |
 | `claude ultrareview` / `/code-review ultra` | 🚫 review **cloud berbayar**: butuh login claude.ai, mengunggah repo ke sandbox Anthropic, 3 run gratis lalu $5–25 per review, 5–15 menit, dan `-p` keluar sebelum temuan datang (docs: pakai subcommand). Bukan operasi lokal; tetap lewat terminal bila diperlukan | 🚫 |
 | `/btw`, `/recap`, `/insights` | diteruskan sebagai command (katalog); hasilnya muncul di chat, tanpa panel khusus | ✅ |
-| Flag `--fallback-model`, `--max-turns`, `--max-budget-usd`, `--tools`, `--allowedTools`, `--disallowedTools`, `--setting-sources` | ⚙️ Flag Claude (menu) → setelan project → spawn | ✅ |
+| Flag `--fallback-model`, `--max-turns`, `--max-budget-usd`, `--tools`, `--allowedTools`, `--disallowedTools`, `--setting-sources`, **`--plugin-dir`/`--plugin-url`** (plugin sesi) | ⚙️ Flag Claude (menu) → setelan project → spawn | ✅ |
 | `--advisor` (model penasihat) | ⚙️ Flag Claude → **Model advisor** → `--advisor` | ✅ |
 | `/fast` (fast mode) | ⚙️ Flag Claude → **Fast mode** → `--settings` `{"fastMode":true}` (flag `/fast` hanya untuk sesi interaktif) | ✅ |
 | `--prompt-suggestions` | ⚙️ Flag Claude → **Saran prompt berikutnya**; bar “Saran berikutnya” di atas kotak pesan mengisi kotak, tidak mengirim sendiri | ✅ |
@@ -70,6 +70,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Lampiran (teks, gambar, PDF) | kotak pesan; PDF dikirim sebagai `resource` blob ACP | ✅ |
 | Config lanjutan (compaction, warming, snapshots, watcher, formatter, media, tool_output, experimental) | ⚙️ Config lanjutan; `compaction.background` + penanda compaction di chat | ✅ |
 | Providers (login, kustom, headers/body) | 👤 Akun → provider, 🔌 header/body; akun tersimpan bisa diganti (credential.activate) | ✅ |
+| Ollama / model lokal | ⚙ → Sistem → **Model lokal (Ollama)**: status, daftar model, GPU/CPU (`/api/ps`), salin nama `ollama/<model>`; OpenCode mendeteksi `127.0.0.1:11434` sendiri | ✅ |
 | Varian model `#variant` | pemilih model | ✅ |
 | Plugins | 🧩 Plugin OpenCode di dialog **Ekstensi** yang sama (tab Plugin menggantikan marketplace saat project OpenCode): npm/Git, tambah/hapus/update | ✅ |
 | MCP servers | 🔌 MCP; status/reconnect/disable/login/**logout**; **⚙ Lanjutan** per server (`disabled`, `codemode`, `pool`, `protocol`, `cwd`, `timeout`) ditulis ke config dengan backup; header HTTP saat menambah | ✅ |

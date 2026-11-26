@@ -23,6 +23,8 @@ function render() {
   $('#cf-disallowed').value = (st.claudeDisallowedTools ?? []).join('\n');
   set('#cf-sources', st.claudeSettingSources ?? '');
   set('#cf-extra-prompt', st.claudeAppendPrompt ?? '');
+  set('#cf-plugin-dir', st.claudePluginDir ?? '');
+  set('#cf-plugin-url', st.claudePluginUrl ?? '');
   set('#cf-advisor', st.claudeAdvisor ?? '');
   $('#cf-fast').checked = st.claudeFastMode === true;
   $('#cf-suggest').checked = st.claudePromptSuggestions === true;
@@ -59,6 +61,8 @@ async function save() {
     claudeDisallowedTools: lines('#cf-disallowed'),
     claudeSettingSources: sources || null,
     claudeAppendPrompt: $('#cf-extra-prompt').value.trim(),
+    claudePluginDir: $('#cf-plugin-dir').value.trim(),
+    claudePluginUrl: $('#cf-plugin-url').value.trim(),
     claudeAdvisor: advisor,
     claudeFastMode: $('#cf-fast').checked,
     claudePromptSuggestions: $('#cf-suggest').checked,
