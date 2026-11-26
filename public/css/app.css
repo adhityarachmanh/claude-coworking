@@ -1428,6 +1428,8 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .compact-card .modal-head { margin-bottom: 0; }
 .compact-summary { margin: 0; padding: 8px 10px; font-size: var(--fs-md); line-height: 1.5; overflow-wrap: anywhere; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); }
 .compact-summary b { color: var(--text); font-variant-numeric: tabular-nums; }
+.compact-breakdown { max-height: 220px; overflow: auto; }
+.compact-breakdown:empty { display: none; }
 .compact-card form { display: flex; flex-direction: column; gap: 8px; }
 .compact-card .compact-note { margin: 0; line-height: 1.45; }
 .compact-card .acct-actions { padding-top: 8px; }

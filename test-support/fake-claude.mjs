@@ -282,7 +282,26 @@ function control(req) {
       return {};
     case 'get_context_usage':
       if (broken('context')) return { tokens: 'n/a' };
-      return { totalTokens: 21000, maxTokens: 1_000_000, percentage: 2, autoCompactThreshold: 967000, isAutoCompactEnabled: true };
+      return {
+        totalTokens: 21000,
+        maxTokens: 1_000_000,
+        percentage: 2,
+        autoCompactThreshold: 967000,
+        isAutoCompactEnabled: true,
+        systemPromptTokens: 6000,
+        claudeMdTokens: 1500,
+        builtInToolTokens: 5000,
+        deferredBuiltinTokens: 0,
+        mcpToolTokens: 1200,
+        mcpInstructionsTokens: 300,
+        agentTokens: 500,
+        slashCommandTokens: 400,
+        toolCallTokens: 2000,
+        toolResultTokens: 2500,
+        attachmentTokens: 0,
+        userMessageTokens: 800,
+        assistantMessageTokens: 800,
+      };
     case 'rewind_files':
       return req.dry_run ? { canRewind: true, filesChanged: ['catatan.txt'], insertions: 1, deletions: 1 } : { canRewind: true };
     case 'mcp_status':

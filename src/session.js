@@ -23,6 +23,7 @@ import { autoContext, classifyEffort } from './effort-classifier.js';
 import { shortModelLabel, tierFor, classifierModelFor } from './model-auto.js';
 import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
+import { contextBreakdown } from './context-usage.js';
 import { MODE_CHOICE_MESSAGE, appModeForReported, claudePermissionMode, isMode } from './modes.js';
 import { HttpError } from './routes/http.js';
 import { ENGINE_LABEL, buildBrief, needsBridge, otherChat } from './handoff.js';
@@ -1229,12 +1230,18 @@ export class ClaudeSession {
 
   /** Exact context usage, as /context counts it (from the last response; no extra model call). */
   refreshContext() {
-    this.request({ subtype: 'get_context_usage', detail: 'summary' })
+    // "full" adds the per-category token counts /context shows (2.1.331); an older CLI ignores it and answers the summary.
+    this.request({ subtype: 'get_context_usage', detail: 'full' })
       .then((c) => {
         if (!c?.maxTokens) return;
         if (this.translator) Object.assign(this.translator, { contextWindow: c.maxTokens, autoCompactAt: c.isAutoCompactEnabled ? (c.autoCompactThreshold ?? null) : null });
         this.hub.setStatus(this.id, {
-          context: { used: c.totalTokens ?? 0, window: c.maxTokens, autoCompactAt: c.isAutoCompactEnabled ? (c.autoCompactThreshold ?? null) : null },
+          context: {
+            used: c.totalTokens ?? 0,
+            window: c.maxTokens,
+            autoCompactAt: c.isAutoCompactEnabled ? (c.autoCompactThreshold ?? null) : null,
+            breakdown: contextBreakdown(c),
+          },
         });
       })
       .catch(() => {});

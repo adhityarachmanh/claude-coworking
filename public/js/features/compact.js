@@ -35,10 +35,21 @@ function summary(st) {
   return parts.join(' · ');
 }
 
+/** The per-category breakdown Claude Code reports (detail "full"), biggest first; empty for OpenCode/older CLI. */
+function breakdown(st) {
+  const rows = Array.isArray(st?.context?.breakdown) ? st.context.breakdown : [];
+  if (!rows.length) return '';
+  const body = rows
+    .map((r) => `<tr><td>${escapeHtml(r.label)}</td><td>${escapeHtml(fmtTokens(r.tokens))}</td><td>${Number(r.percent) || 0}%</td></tr>`)
+    .join('');
+  return `<table class="ins-table"><thead><tr><th>Bagian konteks</th><th>Token</th><th>Porsi</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
 function render() {
   const st = state.statuses[state.active] ?? {};
   const engine = engineNow(st);
   $('#compact-summary').innerHTML = summary(st);
+  $('#compact-breakdown').innerHTML = breakdown(st);
   // Only Claude Code takes a focus note; OpenCode ignores it (the server says so too: ignoredFocus).
   $('#compact-opencode-note').hidden = engine !== 'opencode';
   $('#compact-error').textContent = co.error;

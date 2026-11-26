@@ -45,7 +45,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `claude import` (dari Codex/Cursor/…) | 🚫 sesi interaktif yang menulis config agen lain; menjalankannya butuh TTY dan keputusan per item | 🚫 |
 | `--append-system-prompt` (tambahan per project) | ⚙️ Flag Claude → **Instruksi sistem tambahan**: teks (maks 4000) digabung dengan prompt tim lewat `--append-system-prompt` + `--append-system-prompt-file` (Claude Code 2.1.283+; terpasang 2.1.331) | ✅ |
 | `--system-prompt` / `--system-prompt-file` (mengganti prompt bawaan) | 🚫 sengaja: menghapus panduan tool & pengaman bawaan; persona bisa lewat output style/CLAUDE.md | 🚫 |
-| `/context` rincian + statistik prompt cache | sebagian: ringkasan token/window/auto-compact dari `get_context_usage`; `detail:"full"` dan field cache hanya ada di status line JSON / butuh probe sesi nyata | ✅ (ringkas) |
+| `/context` rincian + statistik prompt cache | ✅ rincian per kategori (`detail:"full"`: prompt sistem, memory/CLAUDE.md, tool bawaan, MCP, instruksi MCP, agent, command/skill, percakapan+tool+lampiran) tampil di dialog **Ringkas konteks**; statistik cache belum ditampilkan (cache read/write ada di ledger/usage) | ✅ (rincian) |
 | Elicitation MCP (server minta input) | `-p` non-interaktif: Claude Code membatalkan permintaan input MCP (docs); kartu form hanya ada di jalur ACP | 🚫 (batasan `-p`) |
 | `/init`, `/doctor`, `/status`, `/usage` | sebagian: ⚙ Kompatibilitas Claude Code | ✅ (status/usage via 👤 Akun & status bar) |
 | `/sandbox` | Windows native tidak di-sandbox; nilai ~0 | 🚫 |
