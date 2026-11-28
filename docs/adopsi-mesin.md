@@ -97,6 +97,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Papan “perlu tindakan” lintas project | izin/rencana/pertanyaan, model hilang, mode lama, budget, CI gagal, OpenCode berhenti, antrian, giliran terputus, jadwal gagal; tunda 1 jam | ✅ |
 | Laporan pola kerja | biaya/token/permintaan/sesi per project, model, dan jam (7/30/90 hari), plus hit cache (baca/tulis) | ✅ |
 | Media project | `/media`: daftar gambar/video di folder project (bounded, tanpa folder noise), buka di penampil file | ✅ |
+| Pesan antar project (manusia) | `/kirim`: kirim pesan ke project lain sebagai prompt (antrian/budget/izin tujuan berlaku) | ✅ |
 | Bandingkan model | satu pertanyaan ke dua model Claude (tool mati, sesi tidak disimpan), jawaban + biaya + durasi | ✅ |
 | Tanya arsip | cari lintas transkrip, jawab hanya dari kutipan dengan nomor sumber yang bisa dibuka | ✅ |
 | Nilai jawaban terakhir | model kedua menilai kebenaran/risiko/verifikasi jawaban terakhir, tanpa tool | ✅ |

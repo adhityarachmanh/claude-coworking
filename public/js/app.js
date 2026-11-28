@@ -73,6 +73,7 @@ import { initClaudeAgents } from './features/claude-agents.js';
 import { initOllama } from './features/ollama.js';
 import { initSkills } from './features/skills.js';
 import { initMedia } from './features/media.js';
+import { initSendMessage } from './features/send-message.js';
 import { initOutputStyle } from './features/output-styles.js';
 import { initOpenCodeCommands } from './features/opencode-commands.js';
 import { initClaudeFlags } from './features/claude-flags.js';
@@ -136,6 +137,7 @@ initClaudeAgents(); // 🖥 sesi latar Claude (claude agents --json)
 initOllama(); // 🦙 status model lokal (read-only)
 initSkills(); // 🧩 /skills: SKILL.md editor for both engines
 initMedia(); // 🖼 /media: images/videos in the project folder
+initSendMessage(); // ✉️ /kirim: message another project
 initOutputStyle(); // 🎭 output style Claude (built-in + custom)
 initOpenCodeCommands(); // 📝 OpenCode .opencode/commands editor
 initClaudeFlags(); // ⚙️ flag Claude per project (spawn args)

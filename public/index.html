@@ -643,8 +643,17 @@
     </div>
 
     <!-- 🧠 Memory (/memory, features/memory.js): CLAUDE.md / AGENTS.md editor, laptop or Tailscale -->
-    <div id="media-modal" class="modal" hidden>
-      <div class="modal-card media-card" role="dialog" aria-modal="true" aria-labelledby="media-title">
+    <div id="send-message-modal" class="modal" hidden>
+      <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="send-message-title">
+        <div class="modal-head"><b id="send-message-title">✉️ Kirim ke project lain</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Pesan masuk sebagai prompt di project tujuan (antrian, budget, dan izinnya berlaku).</p>
+        <label class="oc-field"><span>Project tujuan</span><select id="send-message-project"></select></label>
+        <label class="oc-field"><span>Pesan</span><textarea id="send-message-text" rows="4" maxlength="4000" placeholder="mis. Lanjutkan perbaikan login dan jalankan test-nya."></textarea></label>
+        <p id="send-message-error" class="field-error" role="alert"></p>
+        <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="send-message-send" class="primary">Kirim</button></div>
+      </div>
+    </div>
+    <div id="media-modal" class="modal" hidden>      <div class="modal-card media-card" role="dialog" aria-modal="true" aria-labelledby="media-title">
         <div class="modal-head"><b id="media-title">🖼 Media <small id="media-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p class="muted small">Gambar &amp; video di folder project (tanpa <code>node_modules</code>, <code>.git</code>, <code>dist</code>). Klik untuk membuka di penampil file.</p>
         <div id="media-body" class="media-body" aria-live="polite"></div>

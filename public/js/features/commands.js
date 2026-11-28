@@ -13,6 +13,7 @@ import { openMcp } from './mcp.js';
 import { openMemory } from './memory.js';
 import { openMedia } from './media.js';
 import { openProjectTerminal } from './engine-commands.js';
+import { openSendMessage } from './send-message.js';
 import { openExtensions } from './extensions.js';
 import { openSkills } from './skills.js';
 import { applyOutputStyle, openOutputStyle } from './output-styles.js';
@@ -58,6 +59,7 @@ export const LOCAL_COMMANDS = [
   { name: 'memory', description: '🧠 Edit instruksi memory: CLAUDE.md (Claude Code) / AGENTS.md (OpenCode)' },
   { name: 'media', description: '🖼 Media project: gambar & video (screenshot, aset, hasil generate)' },
   { name: 'terminal', aliases: ['tui'], description: '🖥 Buka CLI di Windows Terminal (TUI penuh: attach, /batch, ultrareview)' },
+  { name: 'kirim', aliases: ['send'], argumentHint: '<project>', description: '✉️ Kirim pesan ke project lain sebagai prompt di sana' },
   { name: 'dashboard', aliases: ['semua'], description: '🗂 Semua project: status setiap project sekaligus (izin, bekerja, antrian, idle)' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
   { name: 'release-notes', aliases: ['catatan-rilis'], description: '📜 Catatan rilis Adhitron (versi terpasang)' },
@@ -258,6 +260,10 @@ export function localCommand(text) {
         .catch((err) => toast(err.message, 'warn'));
       return true;
     }
+    case 'kirim':
+    case 'send':
+      openSendMessage();
+      return true;
     case 'plugin':
     case 'plugins':
       openExtensions('plugins');

@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.13.2
+
+- **✉️ Kirim pesan ke project lain.** `/kirim` (alias `/send`) membuka dialog pilih project + pesan; pesan masuk sebagai prompt biasa di project tujuan (antrian, budget, izin, dan riwayatnya berlaku) — berguna memindahkan tugas antar project tanpa berpindah tab.
+
 ## 1.13.1
 
 - **Perbaikan rilis 1.13.0.** Judul bagian skill memakai kata “sesi” (bukan “mesin”), dan kelas `media-card` kini punya aturan CSS — dua pemeriksaan UI yang gagal di workflow test 1.13.0.
