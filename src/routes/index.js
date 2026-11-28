@@ -32,6 +32,7 @@ import * as permissions from './permissions.js';
 import * as projects from './projects.js';
 import * as push from './push.js';
 import * as queue from './queue.js';
+import * as releaseNotes from './release-notes.js';
 import * as remote from './remote.js';
 import * as routines from './routines.js';
 import * as session from './session.js';
@@ -72,6 +73,7 @@ export function buildRouter() {
     approvals.register,
     attention.register,
     insights.register,
+    releaseNotes.register,
     compare.register,
     archive.register,
     answerReview.register,

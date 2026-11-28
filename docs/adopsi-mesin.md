@@ -21,7 +21,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Output styles | 🎭 Output style (`/output-style`) | ✅ |
 | Subagents (`.claude/agents`) | 🤖 Subagent (menu/`/agents`) | ✅ |
 | Plugins | 🧩 Plugin di dialog **Ekstensi** (menu/`/plugin`): marketplace (pasang, aktif/nonaktif, **update**, hapus), **ℹ Detail** (komponen + biaya token), **⚙ Opsi** (`userConfig`, nilai lewat stdin), **marketplace terdaftar** (tambah/update/hapus) dan **prune** dependensi yatim (pratinjau `--dry-run` lalu `-y`) | ✅ |
-| Hooks | 🪝 Hooks (menu/`/hooks`) — lihat, tambah, ubah, hapus | ✅ |
+| Hooks | 🪝 Hooks (menu/`/hooks`) — lihat, tambah, ubah, hapus; event termasuk `PreSkillShellCommand` (2.1.332) | ✅ |
 | MCP servers | 🔌 MCP (`/mcp`): tambah lokal/remote, **header HTTP**, transport HTTP/SSE, status/reconnect/disable/login, **logout** (hapus kredensial OAuth) | ✅ |
 | Rewind/checkpoint & ringkas | ⏪ Rewind, 🧹 Ringkas | ✅ |
 | Tugas latar | ⧗ Tugas latar (`/tasks`), Monitor: shell dan subagent milik sesi app | ✅ |
@@ -52,6 +52,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `/sandbox` | Windows native tidak di-sandbox; nilai ~0 | 🚫 |
 | `/batch` | memicu 5–30 subagent worktree (mahal, butuh worktree) | 🚫 |
 | Cloud/teleport, remote-control, desktop app, self-hosted | keluar cakupan lokal | 🚫 |
+| `/release-notes` | 📜 dialog **Catatan rilis** dari `CHANGELOG.md` yang dipaketkan (versi terpasang + bagian terbaru) | ✅ |
 | Terminal-only (`/theme`, `/tui`, `/vim`, `/keybindings`, …) | khusus tampilan terminal | 🚫 |
 
 ## OpenCode

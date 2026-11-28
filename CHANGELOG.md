@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **📜 Catatan rilis native.** `/release-notes` (atau `/catatan-rilis`) membuka dialog berisi bagian terbaru dari `CHANGELOG.md` yang ikut dipaketkan, lengkap dengan versi terpasang — tidak lagi menyuruh ke terminal.
+- **🪝 Event hook `PreSkillShellCommand`.** Editor Hooks bisa memilih event baru Claude Code 2.1.332 itu, untuk menolak/mengizinkan perintah shell inline milik skill saat dimuat.
+
 ## 1.12.0
 
 - **🔧 Login Claude di mesin dengan beberapa versi Node.** Adhitron kini menemukan nvm-windows yang dipasang "Author Software" (`%LOCALAPPDATA%\Author Software\nvm`) dan memilih paket Claude yang **lengkap** di antara semua versi Node; wrapper `cli-wrapper.cjs` tanpa binary platform (mis. setelah update gagal) tidak lagi dipakai, sehingga login tidak gagal dengan `spawnSync …claude-code-win32-x64\claude.exe ENOENT`.

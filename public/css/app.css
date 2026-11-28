@@ -1716,6 +1716,10 @@ body.read-only #composer-hint { color: var(--ask); }
 
 /* ---------- help dialog ---------- */
 .modal-card.help-card { max-width: 640px; }
+.modal-card.release-notes-card { max-width: 640px; }
+.release-notes-body { max-height: 65vh; overflow: auto; }
+.release-notes-section + .release-notes-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.release-notes-section h3 { margin: 0 0 6px; font-size: var(--fs-md); }
 .help-tour { margin: 0 0 10px; }
 .help-keys-list { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 6px 0 0; }
 .help-keys-list > div { display: contents; }

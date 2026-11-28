@@ -17,6 +17,7 @@ import { applyOutputStyle, openOutputStyle } from './output-styles.js';
 import { openQueue } from './queue.js';
 import { openPermissions } from './permissions.js';
 import { openRewind } from './rewind.js';
+import { openReleaseNotes } from './release-notes.js';
 import { openRoster } from './roster.js';
 import { confirmNew, openSessions } from './sessions.js';
 import { openTasks } from './tasks.js';
@@ -55,6 +56,7 @@ export const LOCAL_COMMANDS = [
   { name: 'memory', description: '🧠 Edit instruksi memory: CLAUDE.md (Claude Code) / AGENTS.md (OpenCode)' },
   { name: 'dashboard', aliases: ['semua'], description: '🗂 Semua project: status setiap project sekaligus (izin, bekerja, antrian, idle)' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
+  { name: 'release-notes', aliases: ['catatan-rilis'], description: '📜 Catatan rilis Adhitron (versi terpasang)' },
   { name: 'export', argumentHint: '[tools]', description: 'Unduh sesi ini sebagai Markdown (.md) — /export tools: sertakan ringkasan tool' },
   { name: 'search', aliases: ['find'], argumentHint: '<kata kunci>', description: '🔎 Cari di semua percakapan project ini' },
   { name: 'template', aliases: ['t'], description: '⚡ Sisipkan template prompt (review, test, perbaiki error, commit…) — /t' },
@@ -79,7 +81,6 @@ export const CLI_ONLY = {
   ide: 'Buka file di VS Code lewat tombol di tab Perubahan.',
   'install-github-app': 'Khusus terminal.',
   'privacy-settings': 'Khusus terminal.',
-  'release-notes': 'Khusus terminal.',
   exit: 'Tidak perlu: tutup tab ini saja.',
   quit: 'Tidak perlu: tutup tab ini saja.',
 };
@@ -267,6 +268,10 @@ export function localCommand(text) {
       return true;
     case 'help':
       openModal('help-modal');
+      return true;
+    case 'release-notes':
+    case 'catatan-rilis':
+      openReleaseNotes();
       return true;
     case 'export':
       exportActiveSession(value);

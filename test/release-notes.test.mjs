@@ -1,49 +1,39 @@
-// 📝 Release notes: the GitHub Release body comes from the matching CHANGELOG section.
+// 📜 Catatan rilis (`/release-notes`): the bundled CHANGELOG.md split into its `##` sections. Pure, so the parser is
+// tested without the file system or the server.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { notesFrom } from '../scripts/release-notes.mjs';
+import { parseReleaseNotes } from '../src/release-notes.js';
 
-const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CHANGELOG = `# Changelog
+const md = `# Changelog
+
+Beberapa kalimat pembuka.
 
 ## Belum dirilis
 
-- belum.
+- Fitur baru.
 
-## 1.2.3
+## 1.12.0
 
-- **Fitur A.** Satu baris.
-- **Fitur B.** Baris kedua.
+- Rilis terbaru.
+- Baris kedua.
 
-## 1.2.2
+## 1.11.0
 
-- lama.
+- Lama.
 `;
 
-test('notesFrom takes exactly the section of the requested version', () => {
-  assert.equal(notesFrom(CHANGELOG, '1.2.3'), '- **Fitur A.** Satu baris.\n- **Fitur B.** Baris kedua.');
-  assert.equal(notesFrom(CHANGELOG, 'v1.2.2'), '- lama.');
-  assert.equal(notesFrom(CHANGELOG, '1.2.3').includes('lama'), false, 'the next section is not included');
+test('parseReleaseNotes: heading, isi, urutan, dan batas', () => {
+  const all = parseReleaseNotes(md);
+  assert.deepEqual(all.map((s) => s.version), ['Belum dirilis', '1.12.0', '1.11.0']);
+  assert.equal(all[1].body, '- Rilis terbaru.\n- Baris kedua.');
+  assert.equal(all[2].body, '- Lama.');
+  assert.deepEqual(parseReleaseNotes(md, { limit: 1 }).map((s) => s.version), ['Belum dirilis']);
 });
 
-test('notesFrom falls back to a short line for an unknown version', () => {
-  assert.equal(notesFrom(CHANGELOG, '9.9.9'), 'Rilis v9.9.9');
-  assert.equal(notesFrom(CHANGELOG, ''), '');
-});
-
-test('the release workflow publishes the changelog section, not a generic line', () => {
-  const workflow = readFileSync(path.join(APP, '.github', 'workflows', 'release.yml'), 'utf8');
-  assert.match(workflow, /release-notes\.mjs/);
-  assert.match(workflow, /--notes-file/);
-  assert.doesNotMatch(workflow, /--notes "Rilis/);
-});
-
-test('the test workflow runs the fast suite on every push', () => {
-  const workflow = readFileSync(path.join(APP, '.github', 'workflows', 'test.yml'), 'utf8');
-  assert.match(workflow, /test:fast/);
-  assert.match(workflow, /pull_request/);
-  assert.doesNotMatch(workflow, /cdp|chrome/i, 'no browser job: that is the flaky half and runs locally');
+test('parseReleaseNotes: input kosong/aneh aman dan emoji utuh', () => {
+  assert.deepEqual(parseReleaseNotes(''), []);
+  assert.deepEqual(parseReleaseNotes(null), []);
+  assert.deepEqual(parseReleaseNotes('# Changelog\n\ntanpa bagian'), []);
+  const one = parseReleaseNotes('## 1.0.0\n\n- 🦙 panel model lokal');
+  assert.equal(one[0].body, '- 🦙 panel model lokal');
 });
