@@ -4,6 +4,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🖥 Buka CLI di Windows Terminal.** `/terminal` (alias `/tui`) membuka CLI project ini di Windows Terminal dari Adhitron, dan **Sesi latar → Attach (terminal)** membuka sesi yang sedang berjalan — jalur satu klik untuk kemampuan TUI-only (attach penuh, MCP elicitation, `/batch`, `/ultrareview`, `/teleport`, remote control). Jendela terminal tetap di laptop/Tailscale, bukan shell bebas dari browser.
 - **🖼 Media project.** `/media` menampilkan gambar dan video yang ada di folder project (rekursif, tanpa `node_modules`/`.git`/`dist`), terbaru dulu, lalu membukanya di penampil file — berguna untuk hasil `generate_image`/`generate_video`, screenshot, dan aset.
 - **🪙 Perkiraan biaya token per skill.** Daftar skill lokal menampilkan **~N token** (perkiraan dari ukuran `SKILL.md`, ±4 karakter/token), seperti `/skill-doctor` — membantu memilih skill yang terlalu berat.
 - **💬 Buka sesi latar di chat.** Panel **Sesi latar Claude** punya tombol **Buka di chat** untuk melanjutkan percakapan sesi yang sudah selesai (`--resume`) langsung di Adhitron — tanpa terminal. Sesi yang masih berjalan harus dihentikan dulu; attach TUI penuh tetap terminal.

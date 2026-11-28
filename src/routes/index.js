@@ -46,6 +46,7 @@ import * as setup from './setup.js';
 import * as spotify from './spotify.js';
 import * as tasks from './tasks.js';
 import * as team from './team.js';
+import * as terminal from './terminal.js';
 import * as templates from './templates.js';
 import * as wa from './wa.js';
 import * as worktree from './worktree.js';
@@ -86,6 +87,7 @@ export function buildRouter() {
     cliBridge.register,
     templates.register,
     team.register,
+    terminal.register,
     account.register,
     budget.register,
     checklist.register,

@@ -7,6 +7,7 @@ import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { selectProject } from './picker.js';
 import { resumeSession } from './sessions.js';
+import { openProjectTerminal } from './engine-commands.js';
 
 const bg = { agents: [], loading: false, timer: null };
 const STATE = { working: ['bekerja', ''], blocked: ['perlu jawaban', 'warn'], done: ['selesai', 'ok'], failed: ['gagal', 'bad'], stopped: ['dihentikan', ''] };
@@ -23,6 +24,7 @@ function render() {
       const actions = state.local && a.kind === 'background' && a.id
         ? [
             running ? `<button type="button" class="ghost" data-bg="stop" data-id="${escapeHtml(a.id)}">⏹ Hentikan</button>` : '',
+            running ? `<button type="button" class="ghost" data-bg="attach" data-id="${escapeHtml(a.id)}" title="Buka sesi ini di Windows Terminal (TUI penuh)">🖥 Attach (terminal)</button>` : '',
             !running ? `<button type="button" class="ghost" data-bg="respawn" data-id="${escapeHtml(a.id)}">↻ Mulai ulang</button>` : '',
             !running && a.sessionId ? `<button type="button" class="ghost" data-bg="open" data-id="${escapeHtml(a.id)}" title="Lanjutkan percakapan sesi ini di chat Adhitron (setara --resume)">💬 Buka di chat</button>` : '',
             `<button type="button" class="ghost" data-bg="logs" data-id="${escapeHtml(a.id)}">📄 Log</button>`,
@@ -148,6 +150,17 @@ async function openInChat(a) {
   toast('Sesi latar dibuka di chat.', 'ok');
 }
 
+async function attachTerminal(a) {
+  const project = projectForCwd(a?.cwd);
+  if (!project) return toast('Folder sesi ini bukan project di Adhitron.', 'warn');
+  try {
+    await openProjectTerminal(project.id, 'attach', a.id);
+    toast('Windows Terminal dibuka untuk sesi ini.', 'ok');
+  } catch (err) {
+    toast(err.message, 'warn');
+  }
+}
+
 export function openClaudeAgents() {
   openModal('bg-agents-modal');
   // The new-session form is laptop-only; the list itself is readable from Tailscale.
@@ -195,6 +208,7 @@ export function initClaudeAgents() {
     const id = btn.dataset.id;
     if (btn.dataset.bg === 'logs') return showLog(id);
     if (btn.dataset.bg === 'open') return openInChat(bg.agents.find((a) => a.id === id));
+    if (btn.dataset.bg === 'attach') return attachTerminal(bg.agents.find((a) => a.id === id));
     act(id, btn.dataset.bg);
   });
 }

@@ -26,13 +26,13 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | MCP servers | 🔌 MCP (`/mcp`): tambah lokal/remote, **header HTTP**, transport HTTP/SSE, status/reconnect/disable/login, **logout** (hapus kredensial OAuth) | ✅ |
 | Rewind/checkpoint & ringkas | ⏪ Rewind, 🧹 Ringkas | ✅ |
 | Tugas latar | ⧗ Tugas latar (`/tasks`), Monitor: shell dan subagent milik sesi app | ✅ |
-| Agent view / sesi latar Claude (`claude agents --json`, stop/rm/respawn/logs, `daemon status`, `daemon.log`) | ⋯ → **🖥 Sesi latar Claude**: daftar lintas project (`--json --all`), state/status/waitingFor, stop, respawn, rm, log sesi, status daemon, **log daemon**, dan **💬 Buka di chat** (`--resume` untuk sesi selesai; sesi berjalan harus dihentikan dulu). Attach TUI penuh tetap terminal | ✅ (attach TUI 🚫) |
+| Agent view / sesi latar Claude (`claude agents --json`, stop/rm/respawn/logs, `daemon status`, `daemon.log`) | ⋯ → **🖥 Sesi latar Claude**: daftar lintas project (`--json --all`), state/status/waitingFor, stop, respawn, rm, log sesi, status daemon, **log daemon**, **💬 Buka di chat** (`--resume` sesi selesai), dan **🖥 Attach (terminal)** | ✅ |
 | Worktree (`claude -w`) | ⎇ Worktree (menu) | ✅ |
 | PR (`gh`) | 🧩 Pull request | ✅ |
-| `/goal`, `/loop`, `/fewer-permission-prompts` | diteruskan sebagai command (katalog). `/loop` berjalan selama sesi hidup; untuk jadwal yang tidak bergantung sesi, pakai **Tugas terjadwal** (waktu) | ✅ (command) |
+| `/goal`, `/loop`, `/fewer-permission-prompts` | `/goal`/`/fewer-permission-prompts` diteruskan; `/loop` yang harus tetap hidup dijalankan dari `/terminal` | ✅ (command/terminal) |
 | `/branch`, `/fork`, `/subtask` | command `/branch`/`/fork` diteruskan; ⑂ Cabangkan sesi di 🕘 Riwayat (`--fork-session`/`session.fork`) | ✅ (command/sesi) |
 | `/skill-doctor`, `/team-onboarding`, `/workflows` | diteruskan sebagai skill/command dari katalog CLI; hasilnya di chat. Workflow hanya bila fitur itu aktif di akun | ✅ (command) |
-| `/ship`, `/steward` | butuh sesi yang tetap terbuka memantau PR (loop watch). PR dan CI sudah dipantau aplikasi; loop penuh belum ada | 🚫 (sementara) |
+| `/ship`, `/steward` | skill TUI; jalankan dari `/terminal` (PR/CI dasar tetap dipantau aplikasi) | ✅ (via terminal) |
 | `/code-review` (lokal, base/PR/path) | diteruskan sebagai command (katalog `/code-review`); hasil review muncul di chat | ✅ |
 | `claude ultrareview` / `/code-review ultra` | 🚫 review **cloud berbayar**: butuh login claude.ai, mengunggah repo ke sandbox Anthropic, 3 run gratis lalu $5–25 per review, 5–15 menit, dan `-p` keluar sebelum temuan datang (docs: pakai subcommand). Bukan operasi lokal; tetap lewat terminal bila diperlukan | 🚫 |
 | `/btw`, `/recap`, `/insights` | diteruskan sebagai command (katalog); hasilnya muncul di chat, tanpa panel khusus | ✅ |
@@ -51,14 +51,14 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `--append-system-prompt` (tambahan per project) | ⚙️ Flag Claude → **Instruksi sistem tambahan**: teks (maks 4000) digabung dengan prompt tim lewat `--append-system-prompt` + `--append-system-prompt-file` (Claude Code 2.1.283+; terpasang 2.1.331) | ✅ |
 | `--system-prompt` / `--system-prompt-file` (mengganti prompt bawaan) | 🚫 sengaja: menghapus panduan tool & pengaman bawaan; persona bisa lewat output style/CLAUDE.md | 🚫 |
 | `/context` rincian + statistik prompt cache | ✅ rincian per kategori (`detail:"full"`) di dialog **Ringkas konteks**; **hit cache** (baca/tulis) di **Pola kerja** | ✅ |
-| Elicitation MCP (server minta input) | `-p` non-interaktif: Claude Code membatalkan permintaan input MCP (docs); kartu form hanya ada di jalur ACP | 🚫 (batasan `-p`) |
+| Elicitation MCP (server minta input) | `-p` membatalkan permintaan; buka sesi di TUI lewat `/terminal` / **Attach (terminal)** | ✅ (via terminal) |
 | `/init`, `/doctor`, `/status`, `/usage` | `/init` dari 🧠 Memory → **🪄 Buat/segarkan CLAUDE.md** (konfirmasi, output di chat); `/doctor` di ⚙ Kompatibilitas; status/usage di 👤 Akun & status bar | ✅ |
 | `/reload-plugins`, `/reload-skills` | 🧩 Plugin & 🧩 Skills → **↻ Muat ulang di sesi** (command allowlist, tanpa shell bebas) | ✅ |
 | `/sandbox` | Windows native tidak di-sandbox; nilai ~0 | 🚫 |
-| `/batch` | memicu 5–30 subagent worktree (mahal, butuh worktree) | 🚫 |
-| Cloud/teleport, remote-control, desktop app, self-hosted | keluar cakupan lokal | 🚫 |
+| `/batch` | memicu 5–30 subagent worktree (mahal); jalankan dari `/terminal` | ✅ (via terminal) |
+| Cloud/teleport, remote-control, desktop app, self-hosted | lewat `/terminal` (CLI yang sudah login); tidak dibangun ulang di browser | ✅ (via terminal) |
 | `/release-notes` | 📜 dialog **Catatan rilis** dari `CHANGELOG.md` yang dipaketkan (versi terpasang + bagian terbaru) | ✅ |
-| Terminal-only (`/theme`, `/tui`, `/vim`, `/keybindings`, …) | khusus tampilan terminal | 🚫 |
+| Terminal-only (`/theme`, `/tui`, `/vim`, `/keybindings`, …) | `/terminal` membuka window TUI asli | ✅ (via terminal) |
 
 ## OpenCode
 

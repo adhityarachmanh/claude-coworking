@@ -12,6 +12,7 @@ import { openDashboard } from './dashboard.js';
 import { openMcp } from './mcp.js';
 import { openMemory } from './memory.js';
 import { openMedia } from './media.js';
+import { openProjectTerminal } from './engine-commands.js';
 import { openExtensions } from './extensions.js';
 import { openSkills } from './skills.js';
 import { applyOutputStyle, openOutputStyle } from './output-styles.js';
@@ -56,6 +57,7 @@ export const LOCAL_COMMANDS = [
   { name: 'code-review', argumentHint: '[base|#PR|path]', forward: true, description: '🔍 Review kode: diff sekarang atau PR (lokal). `ultra` menjalankan review cloud berbayar, jadi pakai dari terminal' },
   { name: 'memory', description: '🧠 Edit instruksi memory: CLAUDE.md (Claude Code) / AGENTS.md (OpenCode)' },
   { name: 'media', description: '🖼 Media project: gambar & video (screenshot, aset, hasil generate)' },
+  { name: 'terminal', aliases: ['tui'], description: '🖥 Buka CLI di Windows Terminal (TUI penuh: attach, /batch, ultrareview)' },
   { name: 'dashboard', aliases: ['semua'], description: '🗂 Semua project: status setiap project sekaligus (izin, bekerja, antrian, idle)' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
   { name: 'release-notes', aliases: ['catatan-rilis'], description: '📜 Catatan rilis Adhitron (versi terpasang)' },
@@ -246,6 +248,16 @@ export function localCommand(text) {
     case 'media':
       openMedia();
       return true;
+    case 'terminal':
+    case 'tui': {
+      if (!state.active || state.active === DEMO_ID) return toast('Pilih project dulu.');
+      if (state.readOnly) return toast('Terminal hanya bisa dibuka dari laptop.', 'warn');
+      const mode = projectEngine() === 'opencode' ? 'opencode' : 'claude';
+      openProjectTerminal(state.active, mode)
+        .then(() => toast('Windows Terminal dibuka untuk project ini.', 'ok'))
+        .catch((err) => toast(err.message, 'warn'));
+      return true;
+    }
     case 'plugin':
     case 'plugins':
       openExtensions('plugins');
