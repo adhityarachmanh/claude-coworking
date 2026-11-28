@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.13.0
 
 - **🖥 Buka CLI di Windows Terminal.** `/terminal` (alias `/tui`) membuka CLI project ini di Windows Terminal dari Adhitron, dan **Sesi latar → Attach (terminal)** membuka sesi yang sedang berjalan — jalur satu klik untuk kemampuan TUI-only (attach penuh, MCP elicitation, `/batch`, `/ultrareview`, `/teleport`, remote control). Jendela terminal tetap di laptop/Tailscale, bukan shell bebas dari browser.
 - **🖼 Media project.** `/media` menampilkan gambar dan video yang ada di folder project (rekursif, tanpa `node_modules`/`.git`/`dist`), terbaru dulu, lalu membukanya di penampil file — berguna untuk hasil `generate_image`/`generate_video`, screenshot, dan aset.
