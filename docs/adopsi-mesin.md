@@ -29,7 +29,10 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Agent view / sesi latar Claude (`claude agents --json`, stop/rm/respawn/logs, `daemon status`, `daemon.log`) | ⋯ → **🖥 Sesi latar Claude**: daftar lintas project (`--json --all`), state/status/waitingFor, stop, respawn, rm, log sesi, status daemon, **log daemon**, dan **💬 Buka di chat** (`--resume` untuk sesi selesai; sesi berjalan harus dihentikan dulu). Attach TUI penuh tetap terminal | ✅ (attach TUI 🚫) |
 | Worktree (`claude -w`) | ⎇ Worktree (menu) | ✅ |
 | PR (`gh`) | 🧩 Pull request | ✅ |
-| `/goal`, `/loop`, `/fewer-permission-prompts` | diteruskan sebagai command (katalog `/goal`, `/loop`, `/fewer-permission-prompts`) | ✅ |
+| `/goal`, `/loop`, `/fewer-permission-prompts` | diteruskan sebagai command (katalog). `/loop` berjalan selama sesi hidup; untuk jadwal yang tidak bergantung sesi, pakai **Tugas terjadwal** (waktu) | ✅ (command) |
+| `/branch`, `/fork`, `/subtask` | command `/branch`/`/fork` diteruskan; ⑂ Cabangkan sesi di 🕘 Riwayat (`--fork-session`/`session.fork`) | ✅ (command/sesi) |
+| `/skill-doctor`, `/team-onboarding`, `/workflows` | diteruskan sebagai skill/command dari katalog CLI; hasilnya di chat. Workflow hanya bila fitur itu aktif di akun | ✅ (command) |
+| `/ship`, `/steward` | butuh sesi yang tetap terbuka memantau PR (loop watch). PR dan CI sudah dipantau aplikasi; loop penuh belum ada | 🚫 (sementara) |
 | `/code-review` (lokal, base/PR/path) | diteruskan sebagai command (katalog `/code-review`); hasil review muncul di chat | ✅ |
 | `claude ultrareview` / `/code-review ultra` | 🚫 review **cloud berbayar**: butuh login claude.ai, mengunggah repo ke sandbox Anthropic, 3 run gratis lalu $5–25 per review, 5–15 menit, dan `-p` keluar sebelum temuan datang (docs: pakai subcommand). Bukan operasi lokal; tetap lewat terminal bila diperlukan | 🚫 |
 | `/btw`, `/recap`, `/insights` | diteruskan sebagai command (katalog); hasilnya muncul di chat, tanpa panel khusus | ✅ |
@@ -44,10 +47,10 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `--no-session-persistence`, `--safe-mode`, `--debug` | ⚙️ Flag Claude → **Mode privat**, **Safe mode**, **Debug log** | ✅ |
 | `claude auto-mode defaults\|reset`, `/auto-mode-setup` | ⋯ → **Auto mode Claude** (editor `autoMode` di `~/.claude/settings.json`, laptop) | ✅ (reset = kosongkan daftar) |
 | `claude purge` | ⋯ → **Bersihkan data Claude** (pratinjau `--dry-run`, ketik path folder kerja untuk konfirmasi, laptop, tidak saat giliran/antrian berjalan; worktree aktif ikut jadi sasaran) | ✅ |
-| `claude import` (dari Codex/Cursor/…) | 🚫 sesi interaktif yang menulis config agen lain; menjalankannya butuh TTY dan keputusan per item | 🚫 |
+| `claude import` (dari Codex/Cursor/Gemini) | diteruskan sebagai command: `/import <sumber> --dry-run` lalu `--yes` (didukung `-p`; pratinjau muncul di chat). Wizard khusus belum ada | ✅ (command) |
 | `--append-system-prompt` (tambahan per project) | ⚙️ Flag Claude → **Instruksi sistem tambahan**: teks (maks 4000) digabung dengan prompt tim lewat `--append-system-prompt` + `--append-system-prompt-file` (Claude Code 2.1.283+; terpasang 2.1.331) | ✅ |
 | `--system-prompt` / `--system-prompt-file` (mengganti prompt bawaan) | 🚫 sengaja: menghapus panduan tool & pengaman bawaan; persona bisa lewat output style/CLAUDE.md | 🚫 |
-| `/context` rincian + statistik prompt cache | ✅ rincian per kategori (`detail:"full"`: prompt sistem, memory/CLAUDE.md, tool bawaan, MCP, instruksi MCP, agent, command/skill, percakapan+tool+lampiran) tampil di dialog **Ringkas konteks**; statistik cache belum ditampilkan (cache read/write ada di ledger/usage) | ✅ (rincian) |
+| `/context` rincian + statistik prompt cache | ✅ rincian per kategori (`detail:"full"`) di dialog **Ringkas konteks**; **hit cache** (baca/tulis) di **Pola kerja** | ✅ |
 | Elicitation MCP (server minta input) | `-p` non-interaktif: Claude Code membatalkan permintaan input MCP (docs); kartu form hanya ada di jalur ACP | 🚫 (batasan `-p`) |
 | `/init`, `/doctor`, `/status`, `/usage` | `/init` dari 🧠 Memory → **🪄 Buat/segarkan CLAUDE.md** (konfirmasi, output di chat); `/doctor` di ⚙ Kompatibilitas; status/usage di 👤 Akun & status bar | ✅ |
 | `/reload-plugins`, `/reload-skills` | 🧩 Plugin & 🧩 Skills → **↻ Muat ulang di sesi** (command allowlist, tanpa shell bebas) | ✅ |
@@ -80,6 +83,11 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | MCP servers | 🔌 MCP; status/reconnect/disable/login/**logout**; **⚙ Lanjutan** per server (`disabled`, `codemode`, `pool`, `protocol`, `cwd`, `timeout`) ditulis ke config dengan backup; header HTTP saat menambah | ✅ |
 | Worktree | ⎇ Worktree (aplikasi) | ✅ |
 | Automations (2.4) | ⏰ Automation OpenCode: prompt/Code Mode, interval/cron/sekali/event MCP (server dari daftar MCP project), jeda/lanjut/hapus | ✅ |
+| `opencode session list/delete/export/import` + arsip/fork/rename | 🕘 Riwayat sesi: export (`.md`/JSON), import JSON, hapus, cabangkan, ganti nama, arsip/tag/auto-arsip | ✅ |
+| `opencode stats` (`--days/--all/--models/--cost`) | Laporan Pola kerja memuat statistik OpenCode sesuai rentang | ✅ |
+| `opencode reload` | ⚙ Sistem/OpenCode → **Muat ulang config** (menolak saat ada giliran) | ✅ |
+| `generate_image` / `generate_video` (2.4) | Tool berjalan lewat sesi; hasil di folder project tampil di **🖼 /media** | ✅ |
+| Claude Agent provider `configDir` (rotasi beberapa akun saat limit) | belum ada di form config | 🚫 (belum) |
 | `opencode uninstall/share/run/service get-set-unset/debug heap-dump/mini/serve/acp/api/pair/ci` | internal/khusus terminal/berisiko | 🚫 |
 
 ## Fitur di luar CLI (pembeda Adhitron)
