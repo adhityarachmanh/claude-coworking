@@ -31,7 +31,7 @@ function render() {
 function listHtml() {
   const engineNames = sk.engine === 'claude' ? (state.statuses[sk.project]?.engineSkills ?? []) : [];
   const engineHtml = engineNames.length
-    ? `<h3 class="ext-h">Dimuat mesin ini <small class="muted">${engineNames.length}</small></h3>
+    ? `<h3 class="ext-h">Dimuat sesi ini <small class="muted">${engineNames.length}</small></h3>
       <p class="muted small">Termasuk skill bawaan, plugin, dan MCP server (ditulis <code>sumber:skill</code>). Daftar ini hanya informasi; skill lokal bisa diedit di bawah.</p>
       <ul class="ext-list">${engineNames
         .map((n) => {

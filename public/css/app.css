@@ -1717,6 +1717,7 @@ body.read-only #composer-hint { color: var(--ask); }
 /* ---------- help dialog ---------- */
 .modal-card.help-card { max-width: 640px; }
 .modal-card.release-notes-card { max-width: 640px; }
+.modal-card.media-card { max-width: 640px; }
 .media-body { max-height: 60vh; overflow: auto; }
 .media-body .ext-list li[data-media] { cursor: pointer; }
 .release-notes-body { max-height: 65vh; overflow: auto; }

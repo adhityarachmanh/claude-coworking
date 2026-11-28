@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.13.1
+
+- **Perbaikan rilis 1.13.0.** Judul bagian skill memakai kata “sesi” (bukan “mesin”), dan kelas `media-card` kini punya aturan CSS — dua pemeriksaan UI yang gagal di workflow test 1.13.0.
+
 ## 1.13.0
 
 - **🖥 Buka CLI di Windows Terminal.** `/terminal` (alias `/tui`) membuka CLI project ini di Windows Terminal dari Adhitron, dan **Sesi latar → Attach (terminal)** membuka sesi yang sedang berjalan — jalur satu klik untuk kemampuan TUI-only (attach penuh, MCP elicitation, `/batch`, `/ultrareview`, `/teleport`, remote control). Jendela terminal tetap di laptop/Tailscale, bukan shell bebas dari browser.
