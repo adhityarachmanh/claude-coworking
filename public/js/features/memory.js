@@ -6,6 +6,8 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
+import { runEngineCommand } from './engine-commands.js';
+import { projectEngine } from './engine.js';
 
 const mem = { project: null, files: [], file: null, saving: false };
 
@@ -18,6 +20,8 @@ function render() {
     .map((x) => `<button type="button" class="engine-opt${x.key === f?.key ? ' on' : ''}" data-mem="${escapeHtml(x.key)}" aria-pressed="${x.key === f?.key}">${escapeHtml(x.label)}${x.exists ? '' : ' <small class="muted">(baru)</small>'}</button>`)
     .join('');
   $('#memory-hint').textContent = f ? `${f.hint} ${f.path}` : '';
+  const initBtn = $('#memory-init');
+  if (initBtn) initBtn.hidden = projectEngine() !== 'claude';
   $('#memory-save').disabled = !f || mem.saving;
 }
 
@@ -69,6 +73,16 @@ export function initMemory() {
     load(key);
   });
   $('#memory-save').addEventListener('click', save);
+  $('#memory-init').addEventListener('click', async () => {
+    if (!window.confirm('Minta Claude memindai project dan membuat/menyegarkan CLAUDE.md?\n\nIni memakai satu giliran model dan menulis file memory. Hasil serta diff-nya muncul di chat.')) return;
+    try {
+      await runEngineCommand(mem.project, '/init');
+      $('#memory-modal [data-close]')?.click();
+      toast('Permintaan /init dikirim. Hasil dan file memory yang berubah muncul di chat.', 'ok');
+    } catch (err) {
+      toast(err.message, 'warn');
+    }
+  });
   $('#memory-reload').addEventListener('click', () => {
     if (dirty() && !window.confirm('Buang perubahan dan muat ulang dari disk?')) return;
     load(mem.file?.key);

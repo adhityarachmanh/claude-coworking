@@ -2,6 +2,7 @@
 // the settings files, without the terminal (server: src/routes/extensions.js, src/claude-admin.js).
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { runEngineCommand } from './engine-commands.js';
 import { engineOf } from '../core/engine-caps.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
@@ -137,7 +138,7 @@ function pluginsHtml() {
   return `<h3 class="ext-h">Terpasang</h3>${installed}
     <h3 class="ext-h">Marketplace terdaftar <small class="muted">${ext.marketplaces?.length ?? 0}</small></h3>
     ${marketplaces ? `<ul class="ext-list">${marketplaces}</ul>` : '<p class="muted small">Memuat marketplace…</p>'}
-    ${local ? `<div class="acct-actions ext-mp-add"><input id="ext-mp-source" maxlength="500" placeholder="owner/repo atau https://…/marketplace.json" aria-label="Sumber marketplace baru" autocomplete="off" spellcheck="false" /><button type="button" class="ghost" data-mp-add>＋ Tambah marketplace</button><button type="button" class="ghost" data-mp-prune>🧹 Bersihkan dependensi</button></div>` : ''}
+    ${local ? `<div class="acct-actions ext-mp-add"><input id="ext-mp-source" maxlength="500" placeholder="owner/repo atau https://…/marketplace.json" aria-label="Sumber marketplace baru" autocomplete="off" spellcheck="false" /><button type="button" class="ghost" data-mp-add>＋ Tambah marketplace</button><button type="button" class="ghost" data-mp-prune>🧹 Bersihkan dependensi</button><button type="button" class="ghost" data-plugin-reload title="Minta sesi Claude memuat ulang plugin tanpa memulai sesi baru">↻ Muat ulang di sesi</button></div>` : ''}
     <h3 class="ext-h">Katalog plugin <small class="muted">${p.available.length} plugin</small></h3>
     <input id="ext-filter" type="search" value="${escapeHtml(ext.filter)}" placeholder="Cari plugin: github, sentry, test, review…" aria-label="Cari plugin" autocomplete="off" />
     <ul class="ext-list">${list
@@ -343,6 +344,15 @@ export function initExtensions() {
     const t = e.target;
     if (t.closest('[data-mp-add]')) return marketplaceAct('add');
     if (t.closest('[data-mp-prune]')) return prunePlugins();
+    if (t.closest('[data-plugin-reload]')) {
+      try {
+        await runEngineCommand(ext.project, '/reload-plugins');
+        toast('Permintaan muat ulang plugin dikirim ke sesi. Hasilnya muncul di chat.', 'ok');
+      } catch (err) {
+        toast(err.message, 'warn');
+      }
+      return;
+    }
     const mpUpdate = t.closest('[data-mp-update]');
     if (mpUpdate) return marketplaceAct('update', { name: mpUpdate.dataset.mpUpdate });
     const mpRemove = t.closest('[data-mp-remove]');

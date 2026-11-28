@@ -48,7 +48,8 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `--system-prompt` / `--system-prompt-file` (mengganti prompt bawaan) | 🚫 sengaja: menghapus panduan tool & pengaman bawaan; persona bisa lewat output style/CLAUDE.md | 🚫 |
 | `/context` rincian + statistik prompt cache | ✅ rincian per kategori (`detail:"full"`: prompt sistem, memory/CLAUDE.md, tool bawaan, MCP, instruksi MCP, agent, command/skill, percakapan+tool+lampiran) tampil di dialog **Ringkas konteks**; statistik cache belum ditampilkan (cache read/write ada di ledger/usage) | ✅ (rincian) |
 | Elicitation MCP (server minta input) | `-p` non-interaktif: Claude Code membatalkan permintaan input MCP (docs); kartu form hanya ada di jalur ACP | 🚫 (batasan `-p`) |
-| `/init`, `/doctor`, `/status`, `/usage` | sebagian: ⚙ Kompatibilitas Claude Code | ✅ (status/usage via 👤 Akun & status bar) |
+| `/init`, `/doctor`, `/status`, `/usage` | `/init` dari 🧠 Memory → **🪄 Buat/segarkan CLAUDE.md** (konfirmasi, output di chat); `/doctor` di ⚙ Kompatibilitas; status/usage di 👤 Akun & status bar | ✅ |
+| `/reload-plugins`, `/reload-skills` | 🧩 Plugin & 🧩 Skills → **↻ Muat ulang di sesi** (command allowlist, tanpa shell bebas) | ✅ |
 | `/sandbox` | Windows native tidak di-sandbox; nilai ~0 | 🚫 |
 | `/batch` | memicu 5–30 subagent worktree (mahal, butuh worktree) | 🚫 |
 | Cloud/teleport, remote-control, desktop app, self-hosted | keluar cakupan lokal | 🚫 |

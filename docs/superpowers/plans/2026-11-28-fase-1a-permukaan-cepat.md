@@ -175,7 +175,23 @@ git commit -m "Catatan rilis native untuk /release-notes"
 
 ---
 
-### Task 3: Dokumentasi
+### Task 3: Reload plugin/skill + `/init` dari UI (batch 1b)
+
+**Files:**
+- Create: `src/engine-commands.js`, `src/routes/engine-commands.js`, `public/js/features/engine-commands.js`
+- Modify: `src/routes/index.js`, `public/js/features/skills.js`, `public/js/features/extensions.js`, `public/js/features/memory.js`, `public/index.html`
+- Test: `test/engine-commands.test.mjs`
+
+**Interfaces:**
+- `normalizeEngineCommand(raw) -> string|null` (only `/reload-plugins`, `/reload-skills`, `/init`).
+- `runEngineCommand(project, command)` → POST `/api/projects/:id/engine-command`; 409 when busy/wrong engine.
+- Buttons: Skills **↻ Muat ulang di sesi**, Plugin **↻ Muat ulang di sesi**, Memory **🪄 Buat/segarkan CLAUDE.md**.
+
+- [x] Allowlist + route (Claude-only, exact commands, busy check) + tests.
+- [x] UI buttons and handlers (laptop/Tailscale only via existing guards).
+- [x] Docs (FITUR, matriks, CHANGELOG).
+
+### Task 4: Dokumentasi
 
 - [ ] Tambah `## Belum dirilis` di `CHANGELOG.md` (di atas `## 1.12.0`) dengan dua butir: event hook `PreSkillShellCommand`, `/release-notes` native.
 - [ ] Perbarui `docs/FITUR.md` (command `/release-notes` dan hooks) dan `docs/adopsi-mesin.md` (baris `/release-notes` dari 🚫 menjadi ✅).

@@ -7,6 +7,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
+import { runEngineCommand } from './engine-commands.js';
 
 const sk = { project: null, engine: 'claude', roots: [], skills: [], editing: null, saving: false };
 
@@ -42,7 +43,7 @@ function listHtml() {
   return `<p class="muted small">Skill = folder berisi <code>SKILL.md</code> yang dimuat saat relevan. Menambah skill hanya menambah instruksi, tidak memberi izin baru.</p>
     <details><summary class="muted small">Folder yang dibaca Claude Code &amp; OpenCode</summary><p class="muted small">Claude Code: <code>.claude/skills</code>. OpenCode juga membaca <code>.opencode/skills</code>, <code>.claude/skills</code>, dan <code>.agents/skills</code> (project maupun semua project).</p></details>
     ${isLocal() ? '' : '<p class="muted small">🔒 Skill untuk <b>semua project</b> hanya bisa diubah dari laptop; skill project ini tetap bisa dari sini.</p>'}
-    ${rows}<div class="acct-actions"><button class="primary" id="skills-new">＋ Skill baru</button></div>`;
+    ${rows}<div class="acct-actions">${sk.engine === 'claude' ? '<button type="button" class="ghost" id="skills-engine-reload" title="Minta sesi Claude memuat ulang daftar skill tanpa memulai sesi baru">↻ Muat ulang di sesi</button>' : ''}<button class="primary" id="skills-new">＋ Skill baru</button></div>`;
 }
 
 function formHtml(s) {
@@ -87,6 +88,15 @@ export function initSkills() {
   $('#skills-refresh').addEventListener('click', load);
   $('#skills-body').addEventListener('click', async (e) => {
     const t = e.target;
+    if (t.closest('#skills-engine-reload')) {
+      try {
+        await runEngineCommand(sk.project, '/reload-skills');
+        toast('Permintaan muat ulang skill dikirim ke sesi. Hasilnya muncul di chat.', 'ok');
+      } catch (err) {
+        toast(err.message, 'warn');
+      }
+      return;
+    }
     if (t.closest('#skills-new')) {
       sk.editing = { id: '', scope: 'project', description: '', content: '', source: sourceFor('project'), previous: null, previousScope: null, previousSource: null };
       return render();

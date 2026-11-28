@@ -18,6 +18,7 @@ import * as claudeCheck from './claude-check.js';
 import * as diagnostics from './diagnostics.js';
 import * as digest from './digest.js';
 import * as extensions from './extensions.js';
+import * as engineCommands from './engine-commands.js';
 import * as files from './files.js';
 import * as git from './git.js';
 import * as health from './health.js';
@@ -58,6 +59,7 @@ export function buildRouter() {
     session.register,
     tasks.register,
     extensions.register,
+    engineCommands.register,
     skills.register,
     outputStyles.register,
     opencodeCommands.register,
