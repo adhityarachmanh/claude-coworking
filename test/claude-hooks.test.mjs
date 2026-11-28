@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { deleteHook, HookError, listHooks, saveHook } from '../src/claude-admin.js';
+import { deleteHook, HookError, listHooks, saveHook, HOOK_EVENTS } from '../src/claude-admin.js';
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), 'office-hooks-'));
 const write = (file, text) => {
@@ -13,6 +13,10 @@ const write = (file, text) => {
   writeFileSync(file, text);
 };
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
+
+test('HOOK_EVENTS memuat PreSkillShellCommand (Claude Code 2.1.332)', () => {
+  assert.ok(HOOK_EVENTS.includes('PreSkillShellCommand'));
+});
 
 test('saveHook: menambah/mengganti hook tanpa menyentuh kunci lain; timeout; event dengan matcher', () => {
   const project = tmp();

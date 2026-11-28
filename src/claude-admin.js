@@ -395,7 +395,7 @@ export function deleteAgent(projectPath, { scope, name }, home) {
 
 /** Hook events Claude Code recognizes (one source for the server and the editor). */
 export const HOOK_EVENTS = Object.freeze([
-  'SessionStart', 'Setup', 'UserPromptSubmit', 'UserPromptExpansion', 'PreToolUse', 'PermissionRequest',
+  'SessionStart', 'Setup', 'UserPromptSubmit', 'UserPromptExpansion', 'PreSkillShellCommand', 'PreToolUse', 'PermissionRequest',
   'PermissionDenied', 'PostToolUse', 'PostToolUseFailure', 'PostToolBatch', 'Notification', 'MessageDisplay',
   'SubagentStart', 'SubagentStop', 'TaskCreated', 'TaskCompleted', 'TeammateIdle', 'Stop', 'StopFailure',
   'InstructionsLoaded', 'ConfigChange', 'CwdChanged', 'DirectoryAdded', 'FileChanged', 'WorktreeCreate',

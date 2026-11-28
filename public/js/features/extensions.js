@@ -272,7 +272,7 @@ function agentFormHtml(a) {
 
 // ---------- hooks ----------
 
-const FALLBACK_HOOK_EVENTS = ['SessionStart', 'Setup', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'Notification', 'Stop', 'SessionEnd', 'PreCompact', 'PostCompact', 'PreModelSwitch', 'PostModelSwitch', 'FileChanged', 'CwdChanged', 'DirectoryAdded'];
+const FALLBACK_HOOK_EVENTS = ['SessionStart', 'Setup', 'UserPromptSubmit', 'PreSkillShellCommand', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'Notification', 'Stop', 'SessionEnd', 'PreCompact', 'PostCompact', 'PreModelSwitch', 'PostModelSwitch', 'FileChanged', 'CwdChanged', 'DirectoryAdded'];
 const isLocal = () => state.local !== false;
 const hookEventOptions = () => (ext.hookEvents.length ? ext.hookEvents : FALLBACK_HOOK_EVENTS);
 const flatHooks = () => ext.hooks.flatMap((h) => (h.handlers ?? []).map((handler) => ({ ...h, ...handler })));
