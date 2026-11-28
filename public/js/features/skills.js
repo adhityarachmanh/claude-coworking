@@ -5,6 +5,7 @@
 // laptop (like plugins and MCP servers); the UI hides those buttons the same way.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { fmtTokens } from '../core/format.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { runEngineCommand } from './engine-commands.js';
@@ -43,7 +44,7 @@ function listHtml() {
   const rows = sk.skills.length
     ? `<ul class="ext-list" id="skills-list">${sk.skills
         .map((s) => {
-          const meta = [s.id !== s.name ? s.id : '', s.source, s.hasSupport ? '+berkas' : ''].filter(Boolean).join(' · ');
+          const meta = [s.id !== s.name ? s.id : '', s.source, s.hasSupport ? '+berkas' : '', s.bytes > 0 ? `~${fmtTokens(Math.ceil(s.bytes / 4))} token` : ''].filter(Boolean).join(' · ');
           const note = isLocal() || s.scope !== 'user' ? '' : ' · ubah dari laptop';
           const canEdit = isLocal() || s.scope !== 'user';
           return `<li data-id="${escapeHtml(s.id)}" data-scope="${escapeHtml(s.scope)}"><div><b>${escapeHtml(s.name)}</b> <small class="muted">${escapeHtml(meta)}${note}</small><p class="muted small">${escapeHtml(s.description || '(tanpa deskripsi — model sulit menemukannya)')}</p></div>${

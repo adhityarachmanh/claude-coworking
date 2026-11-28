@@ -4,6 +4,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🖼 Media project.** `/media` menampilkan gambar dan video yang ada di folder project (rekursif, tanpa `node_modules`/`.git`/`dist`), terbaru dulu, lalu membukanya di penampil file — berguna untuk hasil `generate_image`/`generate_video`, screenshot, dan aset.
+- **🪙 Perkiraan biaya token per skill.** Daftar skill lokal menampilkan **~N token** (perkiraan dari ukuran `SKILL.md`, ±4 karakter/token), seperti `/skill-doctor` — membantu memilih skill yang terlalu berat.
 - **💬 Buka sesi latar di chat.** Panel **Sesi latar Claude** punya tombol **Buka di chat** untuk melanjutkan percakapan sesi yang sudah selesai (`--resume`) langsung di Adhitron — tanpa terminal. Sesi yang masih berjalan harus dihentikan dulu; attach TUI penuh tetap terminal.
 - **🧩 Skill yang dimuat mesin (termasuk MCP).** Dialog **Skills** kini menampilkan daftar skill yang benar-benar dilaporkan sesi Claude saat mulai — skill bawaan, plugin, dan **skill dari MCP server** (`server:skill`, Claude Code 2.1.332) — di samping skill lokal yang bisa diedit.
 - **🔁 Muat ulang plugin & skill di sesi.** Dialog **Ekstensi → Plugin** dan **Skills** punya tombol **↻ Muat ulang di sesi** yang mengirim `/reload-plugins` / `/reload-skills` ke sesi Claude tanpa memulai sesi baru; hasilnya muncul di chat.

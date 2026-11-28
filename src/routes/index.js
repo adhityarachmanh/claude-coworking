@@ -24,6 +24,7 @@ import * as git from './git.js';
 import * as health from './health.js';
 import * as insights from './insights.js';
 import * as memory from './memory.js';
+import * as media from './media.js';
 import * as misc from './misc.js';
 import * as opencodeCheck from './opencode-check.js';
 import * as opencodeConfig from './opencode-config.js';
@@ -65,6 +66,7 @@ export function buildRouter() {
     opencodeCommands.register,
     files.register,
     memory.register,
+    media.register,
     git.register,
     worktree.register,
     addDirs.register,

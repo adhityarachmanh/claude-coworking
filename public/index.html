@@ -643,8 +643,14 @@
     </div>
 
     <!-- 🧠 Memory (/memory, features/memory.js): CLAUDE.md / AGENTS.md editor, laptop or Tailscale -->
-    <div id="memory-modal" class="modal" hidden>
-      <div class="modal-card memory-card" role="dialog" aria-modal="true" aria-labelledby="memory-title">
+    <div id="media-modal" class="modal" hidden>
+      <div class="modal-card media-card" role="dialog" aria-modal="true" aria-labelledby="media-title">
+        <div class="modal-head"><b id="media-title">🖼 Media <small id="media-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Gambar &amp; video di folder project (tanpa <code>node_modules</code>, <code>.git</code>, <code>dist</code>). Klik untuk membuka di penampil file.</p>
+        <div id="media-body" class="media-body" aria-live="polite"></div>
+      </div>
+    </div>
+    <div id="memory-modal" class="modal" hidden>      <div class="modal-card memory-card" role="dialog" aria-modal="true" aria-labelledby="memory-title">
         <div class="modal-head"><b id="memory-title">Memory <small id="memory-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p class="muted small">Instruksi yang dibaca setiap sesi (seperti <code>/memory</code> di terminal). Disimpan langsung ke file-nya.</p>
         <div id="memory-tabs" class="engine-opts" role="group" aria-label="File memory"></div>

@@ -59,6 +59,7 @@ test('listSkills: id dari nama direktori, description dibaca, file pendukung dit
   assert.equal(found.description, 'Buat rilis');
   assert.equal(found.scope, 'project');
   assert.equal(found.hasSupport, true);
+  assert.ok(found.bytes > 0, 'ukuran SKILL.md untuk perkiraan token');
 });
 
 test('listSkills: SKILL.md tanpa description tetap muncul dengan penanda, tidak menggagalkan daftar', () => {

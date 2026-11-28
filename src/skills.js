@@ -216,9 +216,10 @@ export function listSkills({ engine, projectPath, home = os.homedir() }) {
       } catch {
         continue;
       }
-      const skill = { id: entry.name, name: entry.name, description: '', scope: root.scope, source: root.source, engine: root.engine, dir, file, hasSupport: false };
+      const skill = { id: entry.name, name: entry.name, description: '', scope: root.scope, source: root.source, engine: root.engine, dir, file, hasSupport: false, bytes: 0 };
       try {
         const st = statSync(file);
+        skill.bytes = st.size;
         if (st.size <= MAX_SKILL_BYTES) {
           const { meta } = parseSkillFrontmatter(readFileSync(file, 'utf8'));
           skill.name = meta.name || entry.name;
