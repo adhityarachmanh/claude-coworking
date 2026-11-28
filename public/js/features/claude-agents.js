@@ -1,9 +1,12 @@
 // 🖥 Sesi latar Claude (agent view): the supervisor's sessions from `claude agents --json`, with stop/respawn/
-// rm/logs from the app. Attach and replying still need a terminal (Claude Code's own TUI), so it is not offered.
+// rm/logs/open-in-chat from the app. "Buka di chat" resumes a finished session in the normal chat; a full TUI attach
+// (`claude attach`) still needs a terminal.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
+import { selectProject } from './picker.js';
+import { resumeSession } from './sessions.js';
 
 const bg = { agents: [], loading: false, timer: null };
 const STATE = { working: ['bekerja', ''], blocked: ['perlu jawaban', 'warn'], done: ['selesai', 'ok'], failed: ['gagal', 'bad'], stopped: ['dihentikan', ''] };
@@ -21,6 +24,7 @@ function render() {
         ? [
             running ? `<button type="button" class="ghost" data-bg="stop" data-id="${escapeHtml(a.id)}">⏹ Hentikan</button>` : '',
             !running ? `<button type="button" class="ghost" data-bg="respawn" data-id="${escapeHtml(a.id)}">↻ Mulai ulang</button>` : '',
+            !running && a.sessionId ? `<button type="button" class="ghost" data-bg="open" data-id="${escapeHtml(a.id)}" title="Lanjutkan percakapan sesi ini di chat Adhitron (setara --resume)">💬 Buka di chat</button>` : '',
             `<button type="button" class="ghost" data-bg="logs" data-id="${escapeHtml(a.id)}">📄 Log</button>`,
             `<button type="button" class="ghost danger-text" data-bg="rm" data-id="${escapeHtml(a.id)}">Hapus</button>`,
           ].join('')
@@ -112,6 +116,38 @@ async function startAgent() {
   }
 }
 
+/** Normalize a path for the cwd comparison (Windows separators/case; a trailing slash does not matter). */
+const normPath = (value) => String(value ?? '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+
+/** The project whose folder contains the session's cwd, or null (a folder Adhitron does not list as a project). */
+function projectForCwd(cwd) {
+  const dir = normPath(cwd);
+  if (!dir) return null;
+  return (state.projects ?? []).find((p) => {
+    if (!p?.path || p.virtual || p.id === 'demo') return false;
+    const root = normPath(p.path);
+    return dir === root || dir.startsWith(`${root}/`);
+  }) ?? null;
+}
+
+/**
+ * Opens a finished background session in the normal chat (`claude --resume <sessionId>`), so replying no longer
+ * needs the terminal. A session still working/blocked is refused: stop it first — the transcript is kept.
+ */
+async function openInChat(a) {
+  if (!a?.sessionId) return toast('Sesi ini belum punya id percakapan untuk dilanjutkan.', 'warn');
+  if (a.state === 'working' || a.state === 'blocked' || a.status === 'busy') {
+    return toast('Sesi ini masih berjalan. Hentikan dulu dari panel ini, lalu buka di chat.', 'warn');
+  }
+  const project = projectForCwd(a.cwd);
+  if (!project) return toast('Folder sesi ini bukan project di Adhitron. Tambahkan foldernya sebagai project dulu.', 'warn');
+  if (project.id !== state.active) selectProject(project.id);
+  const ok = await resumeSession(project.id, a.sessionId);
+  if (!ok) return;
+  $('#bg-agents-modal [data-close]')?.click();
+  toast('Sesi latar dibuka di chat.', 'ok');
+}
+
 export function openClaudeAgents() {
   openModal('bg-agents-modal');
   // The new-session form is laptop-only; the list itself is readable from Tailscale.
@@ -158,6 +194,7 @@ export function initClaudeAgents() {
     if (!btn) return;
     const id = btn.dataset.id;
     if (btn.dataset.bg === 'logs') return showLog(id);
+    if (btn.dataset.bg === 'open') return openInChat(bg.agents.find((a) => a.id === id));
     act(id, btn.dataset.bg);
   });
 }
