@@ -37,6 +37,11 @@ const cleanEnv = (extra) => ({
   PATH: extra.PATH,
   HOME: EMPTY,
   USERPROFILE: EMPTY,
+  // Version-manager installs on the machine running the test must not leak into these fixtures.
+  NVM_HOME: undefined,
+  LOCALAPPDATA: undefined,
+  APPDATA: undefined,
+  ProgramFiles: undefined,
   OFFICE_DATA_DIR: undefined,
   OFFICE_RUNTIME_DIR: extra.OFFICE_RUNTIME_DIR,
   OFFICE_APP_DIR: extra.OFFICE_APP_DIR,

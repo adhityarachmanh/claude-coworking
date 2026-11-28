@@ -4,6 +4,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🔧 Login Claude di mesin dengan beberapa versi Node.** Adhitron kini menemukan nvm-windows yang dipasang "Author Software" (`%LOCALAPPDATA%\Author Software\nvm`) dan memilih paket Claude yang **lengkap** di antara semua versi Node; wrapper `cli-wrapper.cjs` tanpa binary platform (mis. setelah update gagal) tidak lagi dipakai, sehingga login tidak gagal dengan `spawnSync …claude-code-win32-x64\claude.exe ENOENT`.
 - **💬 Balasan lewat SendUserMessage.** ⚙ Flag Claude punya **Balasan lewat SendUserMessage** (`--brief`): jawaban yang ditulis model lewat tool `SendUserMessage` tampil di chat sebagai balasan biasa (bukan baris tool), dan pesan berstatus *proaktif* diberi tanda. Tool ini hanya aktif bila akun Claude berhak; tanpa itu CLI mengabaikan flag-nya dan jawaban tetap berupa teks biasa.
 - **📊 Hit cache di Pola kerja.** Ringkasan 7/30/90 hari kini menampilkan **hit cache** (porsi konteks yang dibaca dari prompt cache) beserta token **baca** dan **tulis** cache, dihitung dari ledger seperti laporan biaya.
 - **📊 Rincian konteks.** Dialog **Ringkas konteks** kini menampilkan pembagian token per kategori seperti `/context` (`detail:"full"`): prompt sistem, memory/CLAUDE.md, tool bawaan, tool MCP, instruksi MCP, agent kustom, command/skill, dan percakapan+tool+lampiran — diurutkan dari yang terbesar. Fallback ke ringkasan bila CLI lebih lama.

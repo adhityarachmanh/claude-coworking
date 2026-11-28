@@ -55,27 +55,44 @@ function nodeRuntime() {
   return null;
 }
 
-/** The npm package (real binary, an older cli.js, or the current cli-wrapper.cjs) in each folder. */
-function findPackages(dirs) {
-  for (const dir of dirs) {
-    const pkg = path.join(dir, 'node_modules', '@anthropic-ai', 'claude-code');
-    const native = path.join(pkg, 'bin', EXE);
-    if (existsSync(native)) return { command: native, args: [] };
-    // The platform package behind bin/claude.exe survives a self-update that could not replace the top-level copy
-    // (typically a running session holds it open). Prefer it: it is the real native program.
-    for (const base of [pkg, dir]) {
-      const platform = path.join(base, 'node_modules', '@anthropic-ai', `claude-code-${process.platform}-${process.arch}`, EXE);
-      if (existsSync(platform)) return { command: platform, args: [] };
-    }
-    const node = nodeRuntime();
-    const cli = path.join(pkg, 'cli.js');
-    if (node && existsSync(cli)) return { command: node, args: [cli] };
-    // After a self-update while a session holds bin/claude.exe open, the installer leaves only
-    // bin/claude.exe.old plus cli-wrapper.cjs. The wrapper still runs the installed CLI.
-    const wrapper = path.join(pkg, 'cli-wrapper.cjs');
-    if (node && existsSync(wrapper)) return { command: node, args: [wrapper] };
+/** How complete a package folder is. A native entry beats an older cli.js, which beats the wrapper alone. */
+const RANK_NATIVE = 4;
+const RANK_CLI = 2;
+const RANK_WRAPPER = 1;
+
+/** Every usable entry a package folder offers, with its rank. */
+function packageCandidates(dir, node) {
+  const out = [];
+  const pkg = path.join(dir, 'node_modules', '@anthropic-ai', 'claude-code');
+  const native = path.join(pkg, 'bin', EXE);
+  if (existsSync(native)) out.push({ command: native, args: [], rank: RANK_NATIVE });
+  // The platform package behind bin/claude.exe survives a self-update that could not replace the top-level copy
+  // (typically a running session holds it open). Prefer it: it is the real native program.
+  for (const base of [pkg, dir]) {
+    const platform = path.join(base, 'node_modules', '@anthropic-ai', `claude-code-${process.platform}-${process.arch}`, EXE);
+    if (existsSync(platform)) out.push({ command: platform, args: [], rank: RANK_NATIVE });
   }
-  return null;
+  const cli = path.join(pkg, 'cli.js');
+  if (node && existsSync(cli)) out.push({ command: node, args: [cli], rank: RANK_CLI });
+  // After a self-update while a session holds bin/claude.exe open, the installer leaves only bin/claude.exe.old plus
+  // cli-wrapper.cjs. The wrapper still runs the installed CLI. It hangs off the platform package, so this is the last
+  // resort: a version-manager install whose platform binary is gone must never win over a complete install elsewhere
+  // (the 2026-11 v26.13.0 case: wrapper only, every login failing with spawnSync ENOENT).
+  const wrapper = path.join(pkg, 'cli-wrapper.cjs');
+  if (node && existsSync(wrapper)) out.push({ command: node, args: [wrapper], rank: RANK_WRAPPER });
+  return out;
+}
+
+/** The most complete package across all folders; the first folder wins a tie (PATH order). */
+function findPackages(dirs) {
+  const node = nodeRuntime();
+  let best = null;
+  for (const dir of dirs) {
+    for (const candidate of packageCandidates(dir, node)) {
+      if (!best || candidate.rank > best.rank) best = candidate;
+    }
+  }
+  return best ? { command: best.command, args: best.args } : null;
 }
 
 /** A bare binary in each folder, only if it really is Claude Code. */
@@ -98,7 +115,14 @@ function findIn(dirs) {
 export function windowsInstallDirs(env = process.env) {
   if (process.platform !== 'win32') return [];
   const dirs = [];
-  const homes = [env.NVM_HOME, env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'nvm'), env.APPDATA && path.join(env.APPDATA, 'nvm')].filter(Boolean);
+  const homes = [
+    env.NVM_HOME,
+    env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'nvm'),
+    env.APPDATA && path.join(env.APPDATA, 'nvm'),
+    // nvm-windows installed by "Author Software" (nvm.exe + NVMWindows.Events.dll) lives here, not in %LOCALAPPDATA%\nvm.
+    env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Author Software', 'nvm'),
+    env.APPDATA && path.join(env.APPDATA, 'Author Software', 'nvm'),
+  ].filter(Boolean);
   for (const home of homes) {
     const installs = path.join(home, 'installs');
     try {
