@@ -4,6 +4,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🧩 Skill yang dimuat mesin (termasuk MCP).** Dialog **Skills** kini menampilkan daftar skill yang benar-benar dilaporkan sesi Claude saat mulai — skill bawaan, plugin, dan **skill dari MCP server** (`server:skill`, Claude Code 2.1.332) — di samping skill lokal yang bisa diedit.
 - **🔁 Muat ulang plugin & skill di sesi.** Dialog **Ekstensi → Plugin** dan **Skills** punya tombol **↻ Muat ulang di sesi** yang mengirim `/reload-plugins` / `/reload-skills` ke sesi Claude tanpa memulai sesi baru; hasilnya muncul di chat.
 - **🪄 `/init` dari dialog Memory.** Tombol **Buat/segarkan CLAUDE.md** meminta konfirmasi (memakai satu giliran model), lalu mengirim `/init`; hasil dan file yang berubah muncul di chat.
 - **📜 Catatan rilis native.** `/release-notes` (atau `/catatan-rilis`) membuka dialog berisi bagian terbaru dari `CHANGELOG.md` yang ikut dipaketkan, lengkap dengan versi terpasang — tidak lagi menyuruh ke terminal.

@@ -28,6 +28,18 @@ function render() {
 }
 
 function listHtml() {
+  const engineNames = sk.engine === 'claude' ? (state.statuses[sk.project]?.engineSkills ?? []) : [];
+  const engineHtml = engineNames.length
+    ? `<h3 class="ext-h">Dimuat mesin ini <small class="muted">${engineNames.length}</small></h3>
+      <p class="muted small">Termasuk skill bawaan, plugin, dan MCP server (ditulis <code>sumber:skill</code>). Daftar ini hanya informasi; skill lokal bisa diedit di bawah.</p>
+      <ul class="ext-list">${engineNames
+        .map((n) => {
+          const i = n.indexOf(':');
+          const [source, name] = i > 0 ? [n.slice(0, i), n.slice(i + 1)] : ['', n];
+          return `<li><div><b>${escapeHtml(name)}</b> <small class="muted">${escapeHtml(source || 'lokal')}</small></div></li>`;
+        })
+        .join('')}</ul>`
+    : '';
   const rows = sk.skills.length
     ? `<ul class="ext-list" id="skills-list">${sk.skills
         .map((s) => {
@@ -43,7 +55,7 @@ function listHtml() {
   return `<p class="muted small">Skill = folder berisi <code>SKILL.md</code> yang dimuat saat relevan. Menambah skill hanya menambah instruksi, tidak memberi izin baru.</p>
     <details><summary class="muted small">Folder yang dibaca Claude Code &amp; OpenCode</summary><p class="muted small">Claude Code: <code>.claude/skills</code>. OpenCode juga membaca <code>.opencode/skills</code>, <code>.claude/skills</code>, dan <code>.agents/skills</code> (project maupun semua project).</p></details>
     ${isLocal() ? '' : '<p class="muted small">🔒 Skill untuk <b>semua project</b> hanya bisa diubah dari laptop; skill project ini tetap bisa dari sini.</p>'}
-    ${rows}<div class="acct-actions">${sk.engine === 'claude' ? '<button type="button" class="ghost" id="skills-engine-reload" title="Minta sesi Claude memuat ulang daftar skill tanpa memulai sesi baru">↻ Muat ulang di sesi</button>' : ''}<button class="primary" id="skills-new">＋ Skill baru</button></div>`;
+    ${engineHtml}${rows}<div class="acct-actions">${sk.engine === 'claude' ? '<button type="button" class="ghost" id="skills-engine-reload" title="Minta sesi Claude memuat ulang daftar skill tanpa memulai sesi baru">↻ Muat ulang di sesi</button>' : ''}<button class="primary" id="skills-new">＋ Skill baru</button></div>`;
 }
 
 function formHtml(s) {

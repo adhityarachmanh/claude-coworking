@@ -18,6 +18,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Working dir & folder tambahan | 📂 Folder tambahan (`--add-dir`); untuk OpenCode lewat ACP `additionalDirectories` | ✅ |
 | Memory (CLAUDE.md, rules, auto memory) | Editor Memory (`/memory`) | ✅ |
 | Skills | 🧩 Skills (`/skills`) | ✅ |
+| Skills dari MCP server (2.1.332, `server:skill`) | 🧩 Skills → **Dimuat mesin ini** (dari `init.skills` sesi; bawaan/plugin/MCP) | ✅ |
 | Output styles | 🎭 Output style (`/output-style`) | ✅ |
 | Subagents (`.claude/agents`) | 🤖 Subagent (menu/`/agents`) | ✅ |
 | Plugins | 🧩 Plugin di dialog **Ekstensi** (menu/`/plugin`): marketplace (pasang, aktif/nonaktif, **update**, hapus), **ℹ Detail** (komponen + biaya token), **⚙ Opsi** (`userConfig`, nilai lewat stdin), **marketplace terdaftar** (tambah/update/hapus) dan **prune** dependensi yatim (pratinjau `--dry-run` lalu `-y`) | ✅ |

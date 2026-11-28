@@ -13,12 +13,30 @@ import { randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
-export const SKILL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
-// Windows reserves these device names (with any extension) for every folder: a skill directory named "con" would be
+export const SKILL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;// Windows reserves these device names (with any extension) for every folder: a skill directory named "con" would be
 // unusable and confuse tooling, so the id is refused (same list as src/file-view.js).
 const DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 export const MAX_SKILL_BYTES = 256 * 1024;
 export const SKILL_FILE = 'SKILL.md';
+
+/**
+ * The skills a Claude process reports it loaded (`init.skills`): built-in (anthropic-skills:*), plugin and MCP
+ * (server:skill) names. Deduped, trimmed and bounded; junk entries are dropped. Display-only — never used to write.
+ */
+export function engineSkills(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const name = item.trim();
+    if (!name || name.length > 120 || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+    if (out.length >= 200) break;
+  }
+  return out;
+}
 
 export class SkillError extends Error {
   constructor(status, message) {

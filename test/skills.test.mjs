@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkS
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { deleteSkill, listSkills, parseSkillFrontmatter, readSkill, saveSkill, SkillError, skillDir, skillRoots, validSkillId } from '../src/skills.js';
+import { deleteSkill, engineSkills, listSkills, parseSkillFrontmatter, readSkill, saveSkill, SkillError, skillDir, skillRoots, validSkillId } from '../src/skills.js';
 
 test('validSkillId: huruf kecil/angka/minus, 1–64 char', () => {
   assert.equal(validSkillId('git-release'), true);
@@ -335,4 +335,11 @@ test('backup: hanya MAX_BACKUPS salinan terakhir yang disimpan per skill', () =>
   const folder = path.join(dataDir, 'skills-backups', path.basename(project));
   const count = readdirSync(folder).filter((f) => f.endsWith('SKILL.md')).length;
   assert.ok(count <= 20, `maks 20 backup, dapat ${count}`);
+});
+
+test('engineSkills: nama skill dari init dibersihkan, dedupe, dan dibatasi', () => {
+  assert.deepEqual(engineSkills(['code-review', 'mcp-server:deploy', ' code-review ', '', null, 42, 'x'.repeat(200)]), ['code-review', 'mcp-server:deploy']);
+  assert.deepEqual(engineSkills(null), []);
+  const many = engineSkills(Array.from({ length: 250 }, (_, i) => `s${i}`));
+  assert.equal(many.length, 200);
 });

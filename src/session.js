@@ -24,6 +24,7 @@ import { shortModelLabel, tierFor, classifierModelFor } from './model-auto.js';
 import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
 import { contextBreakdown } from './context-usage.js';
+import { engineSkills } from './skills.js';
 import { MODE_CHOICE_MESSAGE, appModeForReported, claudePermissionMode, isMode } from './modes.js';
 import { HttpError } from './routes/http.js';
 import { ENGINE_LABEL, buildBrief, needsBridge, otherChat } from './handoff.js';
@@ -1135,6 +1136,7 @@ export class ClaudeSession {
       if (msg.session_id && msg.session_id !== this.hub.sessionIdFor(this.id)) this.hub.setSessionId(this.id, msg.session_id);
       this.hub.setStatus(this.id, { activeModel: msg.model ?? null });
       if (Array.isArray(msg.slash_commands)) this.hub.setSlashCommands(msg.slash_commands);
+      if (Array.isArray(msg.skills)) this.hub.setStatus(this.id, { engineSkills: engineSkills(msg.skills) });
     }
     // Claude Code changed mode itself (a plan approved, Shift+Tab in another client): follow it.
     if (msg.type === 'system' && msg.subtype === 'status' && msg.permissionMode) this.onModeReported(msg.permissionMode);
